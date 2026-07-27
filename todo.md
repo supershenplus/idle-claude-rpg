@@ -6,6 +6,21 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 
 ---
 
+## v1.2 — 2026-07-27 ✅
+
+- [x] Sprite art rewrite: 5-row drawn silhouettes for all 4 classes + 29
+      monsters/bosses, replacing the 3-row kaomoji-with-a-hat art. Big HUD is
+      now 8 lines. Heroes face right, monsters face left; each zone has its own
+      shape language (Archives rectilinear, Embers diagonal, Null corrupted)
+- [x] Big art restricted to single-cell glyphs (box drawing / blocks /
+      geometric). The old art mixed two-cell kaomoji like `皿ᴥ`, which silently
+      skewed every centred column in the battle scene
+- [x] Projectile/damage/counter marks anchor to the sprites' waistline derived
+      from `BIG_ROWS` instead of hardcoded rows 0/1/2
+- [x] `test/sprites.test.js` — 6 invariant tests (exact row count, single-cell
+      glyphs, width caps at the 76-col threshold, no trailing whitespace, full
+      coverage of every monster in `content.js`)
+
 ## v1 — built 2026-07-27 ✅
 
 - [x] Engine: fold reducer, combat, XP curve (cap 60), loot (5 rarities), classes, 7 zones + bosses

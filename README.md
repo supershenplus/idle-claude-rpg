@@ -6,14 +6,16 @@ game tick: every command Claude runs is an attack, passing tests grant XP,
 
 ```
 ⚔ Eva the Wizard  Lv 23  XP [██████▌░░░] 6.2k/11.0k   ♥ 84/97   ⛁ 1,204g
-             ◢◣          ↩-7        ░▒▓▓▓▒░
-          (∩｀-´)⊃  ━━☆ﾟ.*            (◣_◢)
-           ╱▓▓╲         ✦-38!        ╲░░░╱
-                  Lv 31  Ash Wraith   HP [███▌░░░░░░] 210/540
+          ▲    ·★°                  ◢▓▓▓◣   ·
+         ▟███▙  ┃     ↩-7          ◢◆ ◆▓▓◣ ░·
+          ▐◉▌───┃   ━━━☆ﾟ.*       ◢▓▓▓▓▓▓▓◣ ░
+         ░▒██▓  ┃    ✦-38!        ▚▓▞▒▚▞░▚▞ ·
+         ◢▒███▓◣                  ░ ▒░  ░ ▒ ·
+                 Lv 31  Ash Wraith   HP [███▌░░░░░░] 210/540
   Ember Wastes · +38 crit! · Magma Imp slain +162xp · [rare] Ember Wand dropped
 ```
 
-The HUD picks a layout from `$COLUMNS`: 3-line sprites with the monster centred
+The HUD picks a layout from `$COLUMNS`: 5-line sprites with the monster centred
 at ≥76 cols, one-line sprites at ≥50, and a single status line below that. Force
 one with `RPG_HUD=big|compact|mini`.
 
