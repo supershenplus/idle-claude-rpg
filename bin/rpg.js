@@ -72,7 +72,21 @@ const commands = {
     console.log(`  XP    ${h.level >= B.LEVEL_CAP ? 'MAX' : `${h.xp}/${xpNeed} [${R.bar(h.xp, xpNeed, 20)}]`}`);
     console.log(`  HP    ${h.hp}/${h.maxHp}   ATK ${Math.round(E.heroAtk(st))}   DEF ${E.heroDef(st)}   Gold ${R.fmtGold(h.gold)}`);
     console.log(`  Zone  ${zone.name} (${zone.min}-${zone.max})`);
-    console.log(`\n  Fighting: ${m.isBoss ? '☠ BOSS ' : ''}${m.sprite} ${m.name} (Lv${m.level})  HP ${m.hp}/${m.maxHp}`);
+
+    // Same battle scene as the statusline, minus the animation frames.
+    const heroBig = sprites.bigHero(h.class);
+    const monBig = sprites.bigMonster(m.id, m.sprite);
+    const heroW = Math.max(...heroBig.map(R.width));
+    const monW = Math.max(...monBig.map(R.width));
+    console.log('');
+    for (let i = 0; i < sprites.BIG_ROWS; i++) {
+      const hl = heroBig[i] || '', ml = monBig[i] || '';
+      console.log(R.row()
+        .put(hl, 4 + Math.round((heroW - R.width(hl)) / 2))
+        .put(ml, 4 + heroW + 14 + Math.round((monW - R.width(ml)) / 2))
+        .toString());
+    }
+    console.log(`\n  Fighting: ${m.isBoss ? '☠ BOSS ' : ''}Lv${m.level} ${m.name}  HP ${m.hp}/${m.maxHp} [${R.bar(m.hp, m.maxHp, 20)}]`);
     if (!m.isBoss) {
       const left = Math.max(0, B.BOSS_KILLS_REQUIRED - st.counters.killsSinceBoss);
       console.log(`  Boss in ${left} more kills (need Lv${zone.boss.level - 1}+): ${zone.boss.name}`);
