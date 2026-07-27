@@ -1,0 +1,1 @@
+{"hook_event_name":"PostToolUse","session_id":"fix1","tool_name":"Edit","tool_input":{"file_path":"/tmp/a.rs","old_string":"old","new_string":"line1\nline2\nline3\nline4\nline5"},"tool_response":{"type":"text","content":"ok"}}

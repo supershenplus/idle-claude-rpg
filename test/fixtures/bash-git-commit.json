@@ -1,0 +1,1 @@
+{"hook_event_name":"PostToolUse","session_id":"fix1","tool_name":"Bash","tool_input":{"command":"git add -A && git commit -m \"fix tests\""},"tool_response":{"type":"text","content":{"exit_code":0,"output":"[main abc123] fix tests"}}}
