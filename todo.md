@@ -17,6 +17,17 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 - [x] 29 unit tests incl. 8-process concurrency stress; balance sim gates pass
   (cap on day 81 @300 events/day; heavy week → Lv17)
 
+## v1.1 — 2026-07-27 ✅
+
+- [x] Monster retaliation (~30% counter per hero attack; bosses rarer but harder)
+      — before this, damage only ever came from *your* failed commands
+- [x] 3-line sprite art for all 4 classes + 29 monsters/bosses; monster centred
+      on the terminal midpoint instead of pinned to the right edge
+- [x] Monster level shown in HUD and `/hero status`
+- [x] Width-aware layout (`R.width`) — kaomoji are full-width, combining accents
+      are zero-width; code-point counts skewed every centred column
+- [x] 3 regression tests + boss-survivability gate
+
 ## Wiring (user action)
 
 - [ ] Merge staged settings (see scratchpad `settings-with-rpg.json`) via `!` cp, restart, `/hero init`

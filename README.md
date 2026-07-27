@@ -6,9 +6,16 @@ game tick: every command Claude runs is an attack, passing tests grant XP,
 
 ```
 ⚔ Eva the Wizard  Lv 23  XP [██████▌░░░] 6.2k/11.0k   ♥ 84/97   ⛁ 1,204g
-  (∩｀-´)⊃━━☆ﾟ.* ✦-38!                    (◣_◢) Ash Wraith  HP [███▌░] 210/540
+             ◢◣          ↩-7        ░▒▓▓▓▒░
+          (∩｀-´)⊃  ━━☆ﾟ.*            (◣_◢)
+           ╱▓▓╲         ✦-38!        ╲░░░╱
+                  Lv 31  Ash Wraith   HP [███▌░░░░░░] 210/540
   Ember Wastes · +38 crit! · Magma Imp slain +162xp · [rare] Ember Wand dropped
 ```
+
+The HUD picks a layout from `$COLUMNS`: 3-line sprites with the monster centred
+at ≥76 cols, one-line sprites at ≥50, and a single status line below that. Force
+one with `RPG_HUD=big|compact|mini`.
 
 - **Zero token cost** for the passive loop — hooks never write to stdout, the
   statusline is pure UI. Only `/hero …` commands (user-initiated) cost tokens.
@@ -74,13 +81,24 @@ All of it also works token-free as `! node bin/rpg.js <cmd>`.
 | `git push` | **War Horn: instakill + guaranteed loot** (5× vs bosses) |
 | command fails | chip damage to you |
 
+Monsters fight back: every attack you land has a ~30% chance of a counter-swing
+(shown as `↩-7` flying back at you), so damage no longer depends on you fumbling
+a command. Bosses counter *less often* but hit far harder — a boss has 10× HP, so
+its fight runs ~10× longer, and per-swing parity with trash would make bosses
+unkillable rather than merely dangerous.
+
 ## Dev
 
 ```sh
-node --test 'test/*.test.js'      # 29 tests incl. concurrency stress
+node --test 'test/*.test.js'      # 32 tests incl. concurrency stress
 node test/sim.js --days 90        # replay synthetic days through the engine
 node test/sim.js --assert         # balance gates (time-to-cap, boss cadence)
 ```
+
+`--assert` is the guard that matters when touching combat: the sim runs a *naked*
+hero (it never equips loot), so it is a worst case, and any change to incoming
+damage shows up there as time-to-cap and boss cadence long before it shows up in
+a real save.
 
 State lives in `~/.config/idle-claude-rpg/` (atomic writes, daily backup,
 corrupt-save quarantine). Tuning knobs are all in `lib/balance.js`.

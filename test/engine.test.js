@@ -67,6 +67,73 @@ test('failures hurt the hero; knight takes half; death respawns with gold loss',
   assert.ok(s.hero.gold < 1000 + s.counters.goldEarned, 'death tax applied');
 });
 
+test('monsters retaliate while the hero attacks, without any failed command', () => {
+  // The bug this guards: damage used to arrive only via test_fail/bash_fail, so
+  // a clean session meant the monster never touched you.
+  let hurtRuns = 0;
+  for (let k = 0; k < 60; k++) {
+    const s = fresh();
+    s.monster.maxHp = 1e6; s.monster.hp = 1e6;   // immortal: isolate retaliation
+    const hp0 = s.hero.hp;
+    const events = [];
+    for (let i = 0; i < 20; i++) events.push(ev('attack_jab', T0 + 1000 + i));
+    E.fold(s, events, T0 + 1500);
+    assert.strictEqual(s.counters.testsFailed, 0, 'no failures involved');
+    if (s.hero.hp < hp0) hurtRuns++;
+  }
+  assert.ok(hurtRuns >= 55, `monster hit back in ${hurtRuns}/60 clean runs`);
+});
+
+test('retaliation never fires from a corpse, and folds into the hit anim', () => {
+  const s = fresh();
+  s.monster.hp = 1;                      // next attack kills it
+  const hp0 = s.hero.hp;
+  E.fold(s, [ev('attack_jab', T0 + 1000)], T0 + 1000);
+  assert.strictEqual(s.counters.kills, 1);
+  assert.strictEqual(s.hero.hp, hp0, 'a dead monster does not counter');
+
+  // counters ride on the existing hit anim rather than queuing their own frame
+  const s2 = fresh();
+  s2.monster.maxHp = 1e6; s2.monster.hp = 1e6;
+  const many = [];
+  for (let i = 0; i < 40; i++) many.push(ev('attack_jab', T0 + 1000 + i));
+  E.fold(s2, many, T0 + 1200);
+  assert.ok(s2.anim.length <= B.ANIM_CAP, 'anim queue not saturated by counters');
+  assert.ok(s2.anim.every(a => a.type !== 'counter'), 'no separate counter frames');
+});
+
+test('bosses are survivable: retaliation scales to the longer fight', () => {
+  // A boss has 10x HP, so its fight runs ~10x more attacks than a trash mob.
+  // Per-attack parity with trash would make bosses unkillable rather than hard,
+  // because death restores the monster to full HP. Two guards:
+
+  // 1. Structural: a longer fight must mean a *rarer* counter, not a common one.
+  assert.ok(B.RETALIATE_CHANCE_BOSS < B.RETALIATE_CHANCE,
+    'boss counters must be rarer than trash counters');
+
+  // 2. Numeric: expected damage across a whole boss fight stays under max HP.
+  //    Weighted mean attack multiplier for a real session (see test/sim.js MIX:
+  //    58% jab, 25% edits, 8% tests, 4% builds, 3% commits, 2% pushes) — not
+  //    jab-only, which is the slowest possible way to fight and thus the most
+  //    punishing, but not how anyone actually plays.
+  const AVG_ATTACK_MULT = 0.58 * B.DMG.jab + 0.25 * B.lineDamageMult(20)
+    + 0.08 * 0.8 * B.DMG.test + 0.04 * B.DMG.build
+    + 0.03 * B.DMG.commit + 0.02 * B.DMG.pushVsBoss;
+
+  const s = fresh();
+  s.hero.level = 9;
+  E.refreshMaxHp(s);
+  s.counters.killsSinceBoss = B.BOSS_KILLS_REQUIRED;
+  E.spawnMonster(s, () => 0.5);
+  assert.ok(s.monster.isBoss);
+
+  const attacks = s.monster.maxHp / (E.heroAtk(s) * AVG_ATTACK_MULT);
+  const perSwing = B.monsterHitDamage(s.monster.level, E.heroDef(s), false) * B.RETALIATE_MULT_BOSS;
+  const expected = attacks * B.RETALIATE_CHANCE_BOSS * perSwing;
+  assert.ok(expected < s.hero.maxHp,
+    `boss fight deals ~${Math.round(expected)} vs ${s.hero.maxHp} max HP (naked Lv9)`);
+});
+
 test('level-ups follow the xp curve and full-heal', () => {
   const s = fresh();
   E.fold(s, [], T0 + 1000);
