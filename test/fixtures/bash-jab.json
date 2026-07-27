@@ -1,0 +1,1 @@
+{"hook_event_name":"PostToolUse","session_id":"fix1","tool_name":"Bash","tool_input":{"command":"ls -la"},"tool_response":{"type":"text","content":{"exit_code":0,"output":"total 8"}}}

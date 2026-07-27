@@ -1,0 +1,1 @@
+{"hook_event_name":"PostToolUse","session_id":"fix1","tool_name":"Bash","tool_input":{"command":"cargo test"},"tool_response":{"type":"text","content":{"exit_code":0,"output":"test result: ok. 12 passed"}}}

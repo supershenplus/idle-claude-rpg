@@ -1,0 +1,1 @@
+{"hook_event_name":"PostToolUse","session_id":"fix1","tool_name":"Bash","tool_input":{"command":"git push origin main"},"tool_response":{"type":"text","content":{"exit_code":0,"output":"To github.com:x/y.git"}}}
