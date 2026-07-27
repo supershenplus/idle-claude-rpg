@@ -30,7 +30,9 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 
 ## Wiring (user action)
 
-- [ ] Merge staged settings (see scratchpad `settings-with-rpg.json`) via `!` cp, restart, `/hero init`
+- [x] Merged into `~/.claude/settings.json` — PostToolUse + Stop hooks and the
+      `statusLine` key (refreshInterval 1, padding 0). Verified live 2026-07-27.
+      Guardrail/secret-grep PreToolUse hooks were preserved alongside.
 
 ## Backlog (v1.1+)
 
