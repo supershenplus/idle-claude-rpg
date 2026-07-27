@@ -6,7 +6,7 @@
 // Never throws: worst case prints a minimal fallback and exits 0.
 //
 // Three layouts, picked by width (override with RPG_HUD=big|compact|mini):
-//   big     6 lines — 3-line sprites, monster centred, name/level/HP beneath
+//   big     8 lines — 5-line sprites, monster centred, name/level/HP beneath
 //   compact 3 lines — one-line sprites, monster centred
 //   mini    1 line  — level, HP, monster name
 //
@@ -157,14 +157,18 @@ function main() {
 
     // Each art row is centred inside its own block, so ragged sprite lines
     // (a 3-cell hat over a 9-cell body) still stack straight.
+    // The projectile flies along the sprites' waistline with the counter-hit
+    // above it and the damage number below, so the trio stays centred in the
+    // gap however tall the art gets.
+    const waist = Math.floor(sprites.BIG_ROWS / 2);
     const art = [];
     for (let i = 0; i < sprites.BIG_ROWS; i++) {
       const hLine = heroBig[i] || '';
       const mLine = monArt[i] || '';
       const r = R.row().put(hLine, heroLeft + Math.round((heroW - R.width(hLine)) / 2));
-      if (i === 0 && g.counter) r.put(g.counter, gapLeft + 2);
-      if (i === 1 && g.flight) r.put(g.flight, gapLeft);
-      if (i === 2 && g.dmg) r.put(g.dmg, gapLeft + 1);
+      if (i === waist - 1 && g.counter) r.put(g.counter, gapLeft + 2);
+      if (i === waist && g.flight) r.put(g.flight, gapLeft);
+      if (i === waist + 1 && g.dmg) r.put(g.dmg, gapLeft + 1);
       r.put(mLine, monLeft + Math.round((monW - R.width(mLine)) / 2));
       art.push(r.toString());
     }
