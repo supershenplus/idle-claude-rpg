@@ -118,7 +118,7 @@ test('shop lists a full rotating shelf and buying charges the listed price', () 
   const listed = out.split('\n').filter(l => /^\s+\d+\. \[/.test(l));
   assert.strictEqual(listed.length, SHOP.STOCK_SIZE, `shelf listed ${listed.length} offers`);
 
-  const stock = SHOP.rollStock(st0.hero.zone, Date.now());
+  const stock = SHOP.rollStock(st0.hero.zone, Date.now(), st0.hero.class);
   const offer = stock.offers[0];
   const bought = run('shop', 'buy', '1');
   assert.match(bought, new RegExp(`Bought .*${offer.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
