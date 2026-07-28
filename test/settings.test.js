@@ -121,6 +121,73 @@ test('merge repoints a hook left behind by a moved clone instead of appending', 
   assert.deepEqual(data.hooks.PreToolUse, [GUARDRAIL]);
 });
 
+test('merge collapses two pre-existing copies into one hook per event', () => {
+  // Two half-finished installs, or a hand-edit plus a merge. The repair loop
+  // used to rewrite *each* stale entry in place, so the pair survived as two
+  // byte-identical hooks and the hero ticked twice per event — which looks
+  // like nothing at all, since a double tick is just a faster hero.
+  const stale = n => ({ type: 'command', command: `node "/clone-${n}/idle-claude-rpg/hooks/rpg-hook.js"`, timeout: 5 });
+  const { dir, file } = sandbox({
+    hooks: {
+      PreToolUse: [GUARDRAIL],
+      PostToolUse: [{ matcher: 'Bash', hooks: [stale(1)] }, { matcher: 'Edit', hooks: [stale(2)] }],
+      Stop: [{ hooks: [stale(1), stale(2)] }],
+    },
+  });
+  run(dir, ['merge']);
+  const data = read(file);
+  const ours = ourHooks(data);
+  assert.equal(ours.length, 2, 'one PostToolUse hook and one Stop hook, not four');
+  for (const h of ours) assert.ok(h.command.includes(HOOK_JS), `repointed at this clone: ${h.command}`);
+  assert.equal(data.hooks.Stop.length, 1, 'the duplicate inside a shared group is gone');
+  assert.deepEqual(data.hooks.PreToolUse, [GUARDRAIL]);
+  // And the emptied shell went with it rather than being left as { hooks: [] }.
+  for (const g of data.hooks.PostToolUse) assert.ok(g.hooks.length, 'no empty group left behind');
+});
+
+test('merge dedupes even when every copy already points at this clone', () => {
+  const { dir, file } = sandbox({ hooks: { PreToolUse: [GUARDRAIL] } });
+  run(dir, ['merge']);
+  // Duplicate what merge just wrote, the way a hand-edit would.
+  const data = read(file);
+  const group = data.hooks.Stop.find(g => g.hooks.some(h => String(h.command).includes('rpg-hook.js')));
+  group.hooks.push({ ...group.hooks[0] });
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
+  const out = run(dir, ['merge']);
+  assert.equal(ourHooks(read(file)).filter(h => h.event === 'Stop').length, 1);
+  assert.match(out, /duplicate/);
+});
+
+test('merge and remove leave a foreign hook that merely mentions our name', () => {
+  // `includes('rpg-hook.js')` is a claim of ownership over any command
+  // containing the string. Both of these belong to somebody else: `merge` used
+  // to rewrite them to point at us, and `remove` used to delete them outright.
+  const impostors = {
+    matcher: 'Bash',
+    hooks: [
+      { type: 'command', command: 'node "/home/u/.claude/hooks/my-rpg-hook.js"' },
+      { type: 'command', command: 'node "/home/u/lint.js" --ignore hooks/rpg-hook.js' },
+    ],
+  };
+  const { dir, file } = sandbox({ hooks: { PostToolUse: [impostors] } });
+  run(dir, ['merge']);
+  let data = read(file);
+  assert.deepEqual(data.hooks.PostToolUse[0], impostors, 'neither impostor was rewritten');
+  assert.equal(ourHooks(data).filter(h => h.command.includes(HOOK_JS)).length, 2,
+    'ours went in alongside them — one PostToolUse, one Stop');
+
+  run(dir, ['remove']);
+  data = read(file);
+  assert.deepEqual(data.hooks.PostToolUse[0], impostors, 'neither impostor was deleted');
+});
+
+test('remove leaves a status line whose command merely mentions ours', () => {
+  const mine = { type: 'command', command: 'node "/home/u/wrap.js" --after statusline/rpg-statusline.js.bak' };
+  const { dir, file } = sandbox({ statusLine: mine });
+  run(dir, ['remove']);
+  assert.deepEqual(read(file).statusLine, mine);
+});
+
 test('merge refuses to take a status line that is already someone else’s', () => {
   const mine = { type: 'command', command: 'node "/home/u/my-own-statusline.js"' };
   const { dir, file } = sandbox({ statusLine: mine });

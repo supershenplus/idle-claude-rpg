@@ -35,10 +35,44 @@ const SKILL_DST = path.join(CLAUDE_DIR, 'skills', 'hero', 'SKILL.md');
 const cmd = s => `node "${s}"`;
 const hookEntry = () => ({ type: 'command', command: cmd(HOOK_JS), timeout: 5 });
 
-// A command belongs to this game if it mentions one of our script basenames —
+// A command belongs to this game if it *invokes* one of our scripts —
 // regardless of which clone it points at. `mine` then narrows that to *this*
 // clone. The gap between the two is exactly the moved-directory failure.
-const isOurs = (c, base) => typeof c === 'string' && c.includes(base);
+//
+// This used to be a bare `c.includes('rpg-hook.js')`, which is a claim of
+// ownership over any command that merely contains the string. Two commands that
+// belong to somebody else and matched it: a wrapper at `.../my-rpg-hook.js`,
+// and any tool naming ours in an argument (`lint.js --ignore hooks/rpg-hook.js`).
+// `merge` rewrote both to point at us; `remove` deleted them outright.
+//
+// Same class of bug as the old `includes('idle-claude-rpg')` in `lib/classify.js`.
+// Matching a path *token* fixes the first case but not the second — an argument
+// is a perfectly good path token — so the question we actually have to answer is
+// which script the command runs. `hooks/` and `statusline/` are then required
+// alongside the basenames: they are part of this repo's layout, so they appear
+// in every legitimate clone and rule out a same-named script somewhere else.
+const INTERP = /^(?:.*\/)?(?:env|node|nodejs|bun|deno)$/;
+const ASSIGN = /^[A-Za-z_]\w*=/;
+
+// The script a shell command invokes — the first token of any segment that is
+// neither an interpreter, one of its flags, nor a leading VAR=value.
+function invokedScripts(c) {
+  if (typeof c !== 'string') return [];
+  const out = [];
+  for (const seg of c.split(/[|;&\n]+/)) {
+    const toks = (seg.match(/(?:"[^"]*"|'[^']*'|\S)+/g) || []).map(t => t.replace(/["']/g, ''));
+    for (const t of toks) {
+      if (!t || t.startsWith('-') || INTERP.test(t) || ASSIGN.test(t)) continue;
+      out.push(t);
+      break;
+    }
+  }
+  return out;
+}
+
+const runs = (c, tail) => invokedScripts(c).some(s => s === tail || s.endsWith(`/${tail}`));
+const isOurHook = c => runs(c, 'hooks/rpg-hook.js');
+const isOurLine = c => runs(c, 'statusline/rpg-statusline.js');
 const isMine = (c, abs) => typeof c === 'string' && c.includes(abs);
 
 function readSettings() {
@@ -92,7 +126,7 @@ function eachHook(data, fn) {
 function inspect(data) {
   const found = { PostToolUse: [], Stop: [], other: [] };
   eachHook(data, (event, group, h) => {
-    if (!isOurs(h.command, 'rpg-hook.js')) return;
+    if (!isOurHook(h.command)) return;
     const rec = { event, matcher: group.matcher, command: h.command, mine: isMine(h.command, HOOK_JS) };
     (found[event] || found.other).push(rec);
   });
@@ -102,7 +136,7 @@ function inspect(data) {
     hooks: found,
     statusLine: {
       present: !!sl,
-      ours: isOurs(slCommand, 'rpg-statusline.js'),
+      ours: isOurLine(slCommand),
       mine: isMine(slCommand, LINE_JS),
       command: slCommand || null,
       refreshInterval: sl && sl.refreshInterval,
@@ -161,25 +195,45 @@ function doMerge(force) {
 
     // Repair before adding: an entry of ours pointing at another clone is the
     // moved-directory case, and rewriting it in place is the whole repair.
-    let repaired = false, present = false;
+    //
+    // Collect every copy across every group *first*. Repointing them as we
+    // walked was the bug: two pre-existing entries (two half-finished installs,
+    // or a hand-edit plus a merge) became two byte-identical ones, so the hero
+    // ticked twice per event — and since a double tick is just a faster hero,
+    // nothing about it looks wrong until you read the file.
+    const found = [];
     for (const group of groups) {
       if (!group || !Array.isArray(group.hooks)) continue;
-      for (const h of group.hooks) {
-        if (!isOurs(h.command, 'rpg-hook.js')) continue;
-        if (isMine(h.command, HOOK_JS)) { present = true; continue; }
-        changes.push(`${event}: repointed a stale hook at this clone (was ${h.command})`);
-        h.command = cmd(HOOK_JS);
-        h.type = 'command';
-        if (h.timeout == null) h.timeout = 5;
-        repaired = present = true;
-      }
+      for (const h of group.hooks) if (isOurHook(h.command)) found.push({ group, h });
     }
-    if (present || repaired) {
-      if (!repaired) changes.push(`${event}: already wired, left alone`);
+
+    if (!found.length) {
+      groups.push(matcher ? { matcher, hooks: [hookEntry()] } : { hooks: [hookEntry()] });
+      changes.push(`${event}: added the game hook`);
       continue;
     }
-    groups.push(matcher ? { matcher, hooks: [hookEntry()] } : { hooks: [hookEntry()] });
-    changes.push(`${event}: added the game hook`);
+
+    // Keep exactly one: an entry already pointing at this clone if there is
+    // one, else the first stale entry, repointed. Every other copy goes.
+    const keep = found.find(f => isMine(f.h.command, HOOK_JS)) || found[0];
+    const emptied = new Set();
+    for (const f of found) {
+      if (f === keep) continue;
+      f.group.hooks = f.group.hooks.filter(x => x !== f.h);
+      if (!f.group.hooks.length) emptied.add(f.group);
+      changes.push(`${event}: dropped a duplicate game hook (was ${f.h.command})`);
+    }
+    if (isMine(keep.h.command, HOOK_JS)) {
+      changes.push(`${event}: already wired, left alone`);
+    } else {
+      changes.push(`${event}: repointed a stale hook at this clone (was ${keep.h.command})`);
+      keep.h.command = cmd(HOOK_JS);
+      keep.h.type = 'command';
+      if (keep.h.timeout == null) keep.h.timeout = 5;
+    }
+    // Only the shells *we* just emptied — a group still holding a co-tenant's
+    // hook stays, and so does one that arrived empty and is none of our business.
+    if (emptied.size) data.hooks[event] = groups.filter(g => !emptied.has(g));
   }
 
   const sl = data.statusLine;
@@ -191,7 +245,7 @@ function doMerge(force) {
     changes.push('statusLine: added the HUD');
   } else if (isMine(slCmd, LINE_JS)) {
     changes.push('statusLine: already wired, left alone');
-  } else if (isOurs(slCmd, 'rpg-statusline.js')) {
+  } else if (isOurLine(slCmd)) {
     data.statusLine = HUD();
     changes.push(`statusLine: repointed a stale HUD at this clone (was ${slCmd})`);
   } else if (force) {
@@ -232,7 +286,7 @@ function doRemove() {
       for (const group of hooks[event]) {
         if (!group || !Array.isArray(group.hooks)) continue;
         const before = group.hooks.length;
-        group.hooks = group.hooks.filter(h => !isOurs(h.command, 'rpg-hook.js'));
+        group.hooks = group.hooks.filter(h => !isOurHook(h.command));
         if (group.hooks.length !== before) removed.push(`${event}: removed the game hook`);
       }
       // Drop the shells we would have created, but never a group that still
@@ -244,7 +298,7 @@ function doRemove() {
   }
 
   const slCmd = data.statusLine && data.statusLine.command;
-  if (isOurs(slCmd, 'rpg-statusline.js')) {
+  if (isOurLine(slCmd)) {
     delete data.statusLine;
     removed.push('statusLine: removed the HUD');
   } else if (data.statusLine) {
