@@ -456,6 +456,84 @@ test('upgraded gear is not displaced by a raw drop of equal roll', () => {
   assert.strictEqual(s.inventory[0], drop, 'the raw drop stayed in the bag');
 });
 
+// The nudge in `status` and the swap `equip best` performs are the same call
+// against different state. If they ever disagree the game starts telling you to
+// run a command that then does nothing, so this pins both halves: the preview
+// must not touch the save, and it must predict the real run exactly.
+test('previewAutoEquip predicts the real run without touching the state', () => {
+  const s = fresh();
+  s.equipment.weapon = { slot: 'weapon', ilvl: 3, rarity: 'common', atk: 2, def: 0, hp: 0, plus: 0 };
+  s.inventory = [
+    { slot: 'weapon', ilvl: 20, rarity: 'rare', atk: 16, def: 0, hp: 0, plus: 0 },
+    { slot: 'neck', ilvl: 12, rarity: 'uncommon', atk: 2, def: 0, hp: 6, plus: 0 },
+  ];
+  E.refreshMaxHp(s);
+
+  const before = JSON.stringify({ eq: s.equipment, inv: s.inventory, hero: s.hero });
+  const predicted = E.previewAutoEquip(s, { displace: true });
+  assert.strictEqual(JSON.stringify({ eq: s.equipment, inv: s.inventory, hero: s.hero }), before,
+    'the preview mutated the state it was previewing');
+  assert.strictEqual(predicted.length, 2, 'preview missed a slot the bag wins');
+
+  const actual = E.autoEquip(s, { displace: true });
+  assert.deepStrictEqual(
+    actual.map(c => [c.key, c.item.ilvl, c.replaced ? c.replaced.ilvl : null]),
+    predicted.map(c => [c.key, c.item.ilvl, c.replaced ? c.replaced.ilvl : null]),
+    'the run diverged from what the preview promised');
+
+  // Idempotent: having taken the advice, there is no advice left to give.
+  assert.strictEqual(E.previewAutoEquip(s, { displace: true }).length, 0);
+});
+
+test('displaced gear goes to the bag, never to the void', () => {
+  const s = fresh();
+  const worn = { slot: 'chest', ilvl: 4, rarity: 'common', atk: 0, def: 1, hp: 4, plus: 0 };
+  const better = { slot: 'chest', ilvl: 20, rarity: 'epic', atk: 0, def: 9, hp: 40, plus: 0 };
+  s.equipment.chest = worn;
+  s.inventory = [better];
+  E.autoEquip(s, { displace: true });
+  assert.strictEqual(s.equipment.chest, better);
+  assert.ok(s.inventory.includes(worn), 'the displaced chestpiece was destroyed, not benched');
+  assert.strictEqual(s.inventory.length, 1, 'bag count drifted across the swap');
+});
+
+test('promoting one ring into a full set is one change, not four', () => {
+  // The winner used to take ring1 and shove the other three survivors down a
+  // slot each. Same gear worn, but four "changes" reported for one real swap —
+  // which now reads as a wrong count in the status nudge and three phantom
+  // "replaced" lines in the equip best report.
+  const s = fresh();
+  const rings = [1, 2, 3, 4].map(n => ({ id: 'r' + n, slot: 'ring', ilvl: 5, rarity: 'common', atk: 1, def: 0, hp: 1, plus: 0 }));
+  rings.forEach((r, i) => { s.equipment['ring' + (i + 1)] = r; });
+  const prize = { id: 'prize', slot: 'ring', ilvl: 20, rarity: 'epic', atk: 8, def: 0, hp: 20, plus: 0 };
+  s.inventory = [prize];
+  E.refreshMaxHp(s);
+
+  const changes = E.autoEquip(s, { displace: true });
+  assert.strictEqual(changes.length, 1, `one ring arrived, ${changes.length} slots reported`);
+  assert.strictEqual(changes[0].replaced.ilvl, 5, 'displaced something other than a worn ring');
+
+  const worn = C.slotKeys('ring').map(k => s.equipment[k].id);
+  assert.ok(worn.includes('prize'), 'the prize is not worn');
+  assert.strictEqual(new Set(worn).size, 4, 'a ring got worn twice');
+  assert.strictEqual(s.inventory.length, 1, 'exactly one ring should have been benched');
+});
+
+test('gearLag counts an empty slot as the zero gear it is', () => {
+  const s = fresh();                       // grove, max 9 → trash tops out at 8
+  assert.strictEqual(E.gearLag(s).target, 8);
+  assert.strictEqual(E.gearLag(s).mean, 0, 'a naked hero is not at ilvl NaN');
+  assert.ok(E.gearLag(s).ratio < E.GEAR_LAG_NUDGE, 'a naked hero should be nudged');
+
+  // One perfect item in twelve slots is still eleven-twelfths naked, and the
+  // mean has to say so — averaging over filled slots only would read 8/8.
+  s.equipment.weapon = { slot: 'weapon', ilvl: 8, rarity: 'rare', atk: 12, def: 0, hp: 0, plus: 0 };
+  assert.ok(E.gearLag(s).mean < 1, 'the mean ignored the eleven empty slots');
+
+  for (const k of C.EQUIP_KEYS) s.equipment[k] = { slot: C.keySlot(k), ilvl: 8, rarity: 'rare', atk: 1, def: 1, hp: 1, plus: 0 };
+  assert.strictEqual(E.gearLag(s).ratio, 1, 'a hero at the zone\'s level should sit at ratio 1');
+});
+
 test('items missing `plus` behave as +0 everywhere', () => {
   // Every save written before upgrades existed has no `plus` field at all, and
   // there is no migration for it — the read paths default instead.

@@ -6,6 +6,43 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 
 ---
 
+## v1.6 — 2026-07-28 ✅ — gear you'd actually wear
+
+- [x] **Gear is named for the class that wears it.** Both the shelf and the drop
+      table pulled their noun from one flat per-slot list, so a Ranger fired
+      arrows out of a wand. Classes now carry a `nouns` override for the four
+      slots where the name says something about how you fight — weapon, offhand,
+      head, chest. Back, hands, feet, neck and rings stay generic
+- [x] Flavour only, and pinned as such: both callers roll slot/rarity/ilvl/stats
+      first and read the noun off the class afterwards, and the shop seed stays
+      `(zone, window)` with no class in it. A test diffs all four classes'
+      shelves with `name` stripped across 12 rotations of every zone, so the day
+      class leaks into the seed the shop stops being one shared economy
+- [x] Class nouns go into `NOUN_SLOT` alongside the generic ones — that map is
+      what the v1→v2 migration reads an old item's slot off, and a noun a class
+      can generate but the map doesn't know is unplaceable gear
+- [x] **`/hero equip best`** — the way out of the `equip all` trap below. Same
+      ranking, allowed to displace; a superset of `equip all` since it fills
+      empty slots too. No `--confirm`: it only moves gear between body and bag,
+      so the worst case is one `equip <n>` to put something back
+- [x] `status` nudges, one line, in priority order: what the bag beats (exact,
+      via `previewAutoEquip`), else worn ilvl against the zone's trash level
+      (`gearLag`, empty slots counted as the zero gear they are). Both dead ends
+      of `equip all` now point at `equip best` instead of shrugging — including
+      "nothing fits your empty slots", which is the one that started this
+- [x] The nudge runs the *real* `autoEquip` against a throwaway facade rather
+      than reimplementing its ranking. A second copy of "best `keys.length` of
+      (worn ∪ bag), ties keep the worn item" would drift, and a nudge that
+      disagrees with the command it recommends is worse than no nudge
+- [x] **Fixed a real bug the new count exposed:** promoting one ring into a full
+      set of four reported *four* changes — the winner took `ring1` and shoved
+      the three survivors down a slot each. Same gear worn, so it was invisible
+      until a user-facing count depended on it. Survivors now keep their slot
+      and newcomers take what's left
+- [x] 6 new tests; sim gates unchanged (attentive still dies every 23 days, sink
+      still absorbs 515k). `equip:fill` still dies 238 times a run — that number
+      is the trap, and the nudge is now the only thing in the game that says so
+
 ## v1.5 — 2026-07-28 ✅ — gold has somewhere to go
 
 - [x] **`/hero upgrade`** — worn gear only, `+0…+10`, each `+` worth 2% of the
@@ -132,9 +169,5 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 - [ ] Shop daily rotation (seeded by date+zone) + "Boss Drum" consumable to arm the boss early
 - [ ] Heisenbug gag: sprite renders in a different spot each frame (it moves when observed)
 - [ ] Per-session stats view
-- [ ] `equip all` is arguably a trap: it's strictly additive by design, so a
-      player who runs it once is "geared" forever and silently rots — that's the
-      sim's `fill` profile, which dies ~240 times a run. Consider a nudge when
-      worn ilvl falls far behind the zone, or an `equip best` that displaces.
 - [ ] Edit/Write `tool_response` schema is undocumented — revisit if a future
   Claude Code version documents per-tool line counts (we count from `tool_input`)
