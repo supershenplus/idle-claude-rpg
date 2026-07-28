@@ -12,16 +12,15 @@ Two criticals were fixed during the review, not filed: the shared-tmp save race
 (`lib/paths.js`) and the NaN death spiral (`lib/engine.js`). Both have regression
 tests that were verified to fail without their fix. The rest:
 
-- [ ] **W1-EOW-dogfood-blind** — `lib/classify.js:56` drops classification for
-      *any* command whose text contains `idle-claude-rpg`, not just invocations of
-      the game's own CLI. Working in this repo therefore earns no XP and sounds no
-      War Horn — `cd ~/Projects/idle-claude-rpg && git commit -am fix` returns
-      `null` (reviewer confirmed live). Scope the guard to the binary invocation
-      (`bin/rpg.js` / `idle-claude-rpg status`) instead of the whole command string.
-      `test/classify.test.js:52` pins the case that *should* stay null and will
-      still pass under the narrower guard — but replace its hardcoded
-      `/Users/eva0012/...` path (also present in `docs/PLAN.md:103`) while you're
-      in there; both are developer-machine paths baked into a public repo
+- [x] **W1-EOW-dogfood-blind** — `lib/classify.js` dropped classification for
+      *any* command whose text contained `idle-claude-rpg`, so working in this repo
+      earned no XP and sounded no War Horn. Replaced with `SELF_RE`, which matches
+      our entrypoints as an invoked path token. The substring check turned out to
+      be wrong in *both* directions: `node bin/rpg.js status` (relative path, no
+      project name in the string) farmed XP freely, so the guard also failed at the
+      only job it had. Both directions are now pinned by tests, and the hardcoded
+      `/Users/eva0012/...` path is out of `test/classify.test.js`.
+      Still open: the same developer path remains in `docs/PLAN.md:103`
 - [ ] **W1-EOW-foreign-hook-clobber** — `bin/settings.js:41` decides a hook is
       "ours" by bare substring `c.includes('rpg-hook.js')`, so a hook belonging to
       another clone (or another tool that merely has that string in its command)

@@ -49,7 +49,34 @@ test('bash command classification', () => {
 });
 
 test('self-farming via the game CLI yields no event', () => {
-  assert.strictEqual(classify(bash('node /Users/eva0012/Projects/idle-claude-rpg/bin/rpg.js status', 0)), null);
+  for (const cmd of [
+    'node /home/dev/Projects/idle-claude-rpg/bin/rpg.js status',
+    'node bin/rpg.js status',
+    './bin/rpg.js sell all --confirm',
+    'node bin/demo.js boss',
+    'node bin/settings.js --check',
+    'IDLE_RPG_HOME=/tmp/x node bin/rpg.js fold',
+  ]) {
+    assert.strictEqual(classify(bash(cmd, 0)), null, `should not farm: ${cmd}`);
+  }
+});
+
+test('real work inside the game repo still counts', () => {
+  // The old guard was a bare `cmd.includes('idle-claude-rpg')`, so every command
+  // run while working on this project — the one repo its author uses most —
+  // silently produced no event at all.
+  const cases = [
+    ['cd /home/dev/Projects/idle-claude-rpg && git commit -am fix', 'commit'],
+    ['git -C /home/dev/Projects/idle-claude-rpg push origin main', 'push'],
+    ['node --test /home/dev/Projects/idle-claude-rpg/test/state.test.js', 'test_pass'],
+    ['ls /home/dev/Projects/idle-claude-rpg/lib', 'attack_jab'],
+    ['grep -rn rpg.json /home/dev/Projects/idle-claude-rpg', 'attack_jab'],
+  ];
+  for (const [cmd, expected] of cases) {
+    const ev = classify(bash(cmd, 0));
+    assert.ok(ev, `no event for: ${cmd}`);
+    assert.strictEqual(ev.e, expected, `"${cmd}" → ${ev.e}, want ${expected}`);
+  }
 });
 
 test('edit tools count lines from tool_input', () => {
