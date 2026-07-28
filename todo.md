@@ -132,12 +132,31 @@ tests that were verified to fail without their fix. The rest:
       files fails on `events.ndjson survived the reset`. A save is spread across
       five files, and leaving the inbox or the lock behind hands the next hero the
       last one's queued events
-- [ ] **W1-EOW-migration-untested** — the v1→v2 migration body (`lib/state.js:23-52`
-      — reslot-by-noun, stat re-roll, hp refresh) has no direct test; coverage stops
-      at "fresh v2 round-trips" and "unknown version rejected". This is the one path
-      that can corrupt a real player's gear on load. Also `lib/state.js:100` only
-      refreshes the backup when it's >24h stale, so the first save after a bad
-      migration can overwrite the last good pre-migration snapshot
+- [x] **W1-EOW-migration-untested** — the v1→v2 migration body had no direct
+      test; coverage stopped at "fresh v2 round-trips" and "unknown version
+      rejected". It is the one load path that fails *quietly*: a truncated file
+      throws and an unknown version returns null, and both end at the backup,
+      while a bad reslot returns a structurally valid save with a player's gear
+      missing from it and the game plays on without mentioning it. 6 new tests
+      pin reslot-by-noun, the no-noun legendary fallback, the stat re-roll onto
+      the v2 curve, the hp refresh, the bag, and the collision branch that sends
+      a displaced item to the bag rather than overwriting the winner
+- [x] Verified by mutating the migration rather than by writing them red: every
+      one of the six behaviours fails its own test when removed (dropping the
+      noun lookup fails three)
+- [x] **`state.bak` cannot be the pre-migration recovery point** and shouldn't be
+      asked to: it refreshes on the first save more than 24h after the last, so
+      the last good pre-v2 file can be gone within a day of the upgrade. Rather
+      than tighten that window — the backup is doing its own job, against
+      corruption, and shortening it costs a write per fold — `loadState` now
+      keeps the *original bytes* as `state.v<n>.json` when it migrates. Written
+      once, never rewritten, and never read by the game: it exists so a player
+      who lost gear has something to go back to
+- [x] Which made `reset` a liar, since it promises "forever" against a hardcoded
+      list of five files. It now deletes `S.saveFiles()`, which sweeps the spilled
+      copies too — that also closes a pre-existing gap, since quarantined
+      `state.corrupt-*` files were surviving a reset already
+- [x] 7 new tests + 1 extended (177 total)
 
 Deferred, deliberately not filed as items: shop restock trusts the system clock
 (accepted — offline local game, same trust model as offline progress); settings

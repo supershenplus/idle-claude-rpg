@@ -593,7 +593,9 @@ const commands = {
 
   reset() {
     if (!flag('confirm')) { console.log('This deletes your hero forever. Rerun with --confirm.'); process.exit(1); }
-    for (const f of [P.stateFile, P.bakFile, P.eventsFile, P.processingFile, P.lockFile]) {
+    // S.saveFiles() rather than a list written out here: a save spills into
+    // quarantined and pre-migration copies, and "forever" has to mean them too.
+    for (const f of S.saveFiles()) {
       try { fs.unlinkSync(f); } catch (_) {}
     }
     console.log('Save deleted. /hero init to start over.');

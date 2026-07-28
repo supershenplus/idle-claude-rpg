@@ -12,6 +12,7 @@ process.env.IDLE_RPG_HOME = HOME;
 const P = require('../lib/paths');
 const S = require('../lib/state');
 const E = require('../lib/engine');
+const C = require('../lib/content');
 
 const T0 = 1_700_000_000_000;
 
@@ -151,4 +152,172 @@ test('unlocked saveState racing a locked fold never crashes or corrupts', () => 
     const leftovers = fs.readdirSync(HOME).filter(f => f.startsWith(P.tmpGlobPrefix));
     assert.deepStrictEqual(leftovers, [], 'no staging files left behind');
   });
+});
+
+// ---------------------------------------------------------------------------
+// The v1 → v2 migration. Every other load failure is loud: a truncated file
+// throws, an unknown version returns null, and both end up at the backup. This
+// one is the opposite — it returns a structurally valid save with the wrong
+// contents in it, so a bad reslot loses a player's gear and the game plays on
+// without ever mentioning it. Coverage used to stop at "fresh v2 round-trips".
+
+function v1Save(over) {
+  return {
+    version: 1,
+    createdAt: T0, updatedAt: T0, lastEventAt: T0, lastTickAt: T0,
+    hero: {
+      name: 'Legacy', class: 'knight', level: 20, xp: 40, hp: 90, maxHp: 90,
+      gold: 500, zone: 'grove', unlockedZones: ['grove', 'caves'],
+    },
+    equipment: { weapon: null, armor: null, trinket: null },
+    inventory: [],
+    monster: null,
+    counters: {
+      kills: 12, bossKills: 1, killsSinceBoss: 3, zoneKills: { grove: 12 },
+      commits: 4, pushes: 2, testsPassed: 0, testsFailed: 0,
+      linesWritten: 0, goldEarned: 900, deaths: 1, lastTestXpAt: 0,
+    },
+    anim: [], ticker: [], eventsFolded: 7,
+    ...over,
+  };
+}
+
+// v1's item shape: one of three slots, and stats rolled on a three-slot curve.
+function v1Item(slot, name, ilvl, stats) {
+  return {
+    id: `v1-${name.replace(/\W+/g, '')}`, slot, name, rarity: 'rare', ilvl,
+    atk: 0, def: 0, hp: 0, from: 'kill', at: T0, ...stats,
+  };
+}
+
+function loadV1(save) {
+  fs.writeFileSync(P.stateFile, JSON.stringify(save));
+  return S.loadState();
+}
+
+test('migration re-slots worn v1 gear by the noun in its name', () => {
+  const st = loadV1(v1Save({
+    equipment: {
+      weapon: v1Item('weapon', 'Runed Grove Wand', 8),
+      armor: v1Item('armor', 'Fine Grove Cloak', 7),
+      trinket: v1Item('trinket', 'Runed Grove Charm', 6),
+    },
+  }));
+
+  assert.strictEqual(st.version, 2);
+  assert.strictEqual(st.equipment.weapon.name, 'Runed Grove Wand');
+  assert.strictEqual(st.equipment.back.name, 'Fine Grove Cloak', 'a Cloak was always a cloak');
+  assert.strictEqual(st.equipment.neck.name, 'Runed Grove Charm');
+  assert.strictEqual(st.equipment.chest, null, 'gear landed in a slot its noun does not name');
+  // The v1 keys are gone, and nothing was left behind in the bag.
+  assert.deepStrictEqual(Object.keys(st.equipment).sort(), [...C.EQUIP_KEYS].sort());
+  assert.deepStrictEqual(st.inventory, []);
+  // Everything that is not gear survives untouched.
+  assert.strictEqual(st.hero.gold, 500);
+  assert.strictEqual(st.counters.kills, 12);
+  assert.strictEqual(st.hero.unlockedZones.length, 2);
+});
+
+test('migration falls back to the old slot for a legendary with no noun', () => {
+  // Legendaries are named things — "Rootfang's Splinter" says nothing about
+  // where it is worn — so the v1 slot is all there is to go on.
+  const st = loadV1(v1Save({
+    equipment: {
+      weapon: v1Item('weapon', "Rootfang's Splinter", 9),
+      armor: v1Item('armor', "Rootfang's Bark", 9),
+      trinket: v1Item('trinket', "Rootfang's Seed", 9),
+    },
+  }));
+
+  assert.strictEqual(st.equipment.weapon.name, "Rootfang's Splinter");
+  assert.strictEqual(st.equipment.chest.name, "Rootfang's Bark", 'armor should fall back to chest');
+  assert.strictEqual(st.equipment.ring1.name, "Rootfang's Seed", 'trinket should fall back to ring1');
+});
+
+test('migration re-rolls v1 stats onto the v2 curve', () => {
+  // v1 had three slots, so one "armor" carried the hp of a whole modern set.
+  // Left alone, every legacy item would outclass every new drop for its slot
+  // permanently — the migration has to re-roll rather than carry the numbers.
+  const inflated = { atk: 0, def: 80, hp: 400 };
+  const st = loadV1(v1Save({
+    equipment: { weapon: null, armor: v1Item('armor', 'Fine Grove Vest', 7, inflated), trinket: null },
+  }));
+
+  const worn = st.equipment.chest;
+  const B = require('../lib/balance');
+  const mult = B.RARITIES.find(r => r.id === 'rare').mult;
+  assert.deepStrictEqual(
+    { atk: worn.atk, def: worn.def, hp: worn.hp },
+    { ...B.itemStats('chest', 7, mult) },
+    'the v1 numbers were carried across instead of re-rolled');
+  assert.ok(worn.hp < inflated.hp, 'a v1 armor roll still outclasses the whole v2 curve');
+  // hp totals move under the hero when its gear does.
+  assert.strictEqual(st.hero.maxHp, E.heroMaxHp(st), 'maxHp was not refreshed after the reslot');
+});
+
+test('migration re-slots the bag as well as what is worn', () => {
+  const st = loadV1(v1Save({
+    inventory: [
+      v1Item('armor', 'Fine Grove Helm', 5),
+      v1Item('trinket', 'Runed Grove Band', 4),
+      v1Item('weapon', 'Runed Grove Dagger', 6),
+    ],
+  }));
+
+  assert.deepStrictEqual(st.inventory.map(i => i.slot), ['head', 'ring', 'weapon']);
+  assert.ok(st.inventory.every(i => C.EQUIP_KEYS.includes(C.slotKeys(i.slot)[0])),
+    'a bagged item ended up in a slot the game has no key for');
+});
+
+test('migration bags a worn item whose noun collides with one already placed', () => {
+  // Two v1 slots can resolve to the same v2 slot — the loser has to go to the
+  // bag rather than overwrite the winner, which would delete gear outright.
+  const st = loadV1(v1Save({
+    equipment: {
+      weapon: v1Item('weapon', 'Runed Grove Sword', 9),
+      armor: v1Item('armor', 'Fine Grove Maul', 3),   // also a weapon by noun
+      trinket: null,
+    },
+  }));
+
+  assert.strictEqual(st.equipment.weapon.name, 'Runed Grove Sword', 'the first item lost its slot');
+  assert.deepStrictEqual(st.inventory.map(i => i.name), ['Fine Grove Maul'],
+    'the displaced item was dropped instead of bagged');
+  assert.strictEqual(st.inventory[0].slot, 'weapon');
+});
+
+test('a migrated save keeps the original bytes under its old version', () => {
+  // state.bak refreshes on the first save more than a day after the last one,
+  // so it cannot be the pre-migration recovery point: a migration that mangles
+  // gear silently is exactly the case where you want yesterday's file back.
+  const original = v1Save({ equipment: { weapon: v1Item('weapon', 'Runed Grove Wand', 8), armor: null, trinket: null } });
+  const raw = JSON.stringify(original);
+  fs.writeFileSync(P.stateFile, raw);
+  const snapshot = path.join(HOME, 'state.v1.json');
+
+  const st = S.loadState();
+  assert.strictEqual(st.version, 2);
+  assert.strictEqual(fs.readFileSync(snapshot, 'utf8'), raw, 'the pre-migration bytes were not kept');
+
+  // The scenario from the finding: bak is a day stale, so the next save
+  // overwrites it with post-migration contents. The snapshot must not move.
+  S.saveState(st);
+  const old = Date.now() - 48 * 60 * 60 * 1000;
+  fs.utimesSync(P.bakFile, old / 1000, old / 1000);
+  S.saveState(st);
+  assert.strictEqual(JSON.parse(fs.readFileSync(P.bakFile, 'utf8')).version, 2,
+    'the stale backup should have been refreshed — the test is not exercising the case');
+  assert.strictEqual(fs.readFileSync(snapshot, 'utf8'), raw, 'the snapshot followed the backup');
+
+  // And a second load of an already-migrated save neither rewrites it nor
+  // adds one for the version it is already at.
+  S.loadState();
+  assert.strictEqual(fs.readFileSync(snapshot, 'utf8'), raw);
+  assert.ok(!fs.existsSync(path.join(HOME, 'state.v2.json')), 'snapshotted a save that was never migrated');
+});
+
+test('a save that is already current is loaded without a snapshot', () => {
+  S.saveState(E.newState('wizard', 'Current', T0));
+  assert.ok(S.loadState());
+  assert.deepStrictEqual(fs.readdirSync(HOME).filter(f => /^state\.v\d+\.json$/.test(f)), []);
 });

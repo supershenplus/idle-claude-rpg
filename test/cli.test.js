@@ -335,9 +335,15 @@ test('reset --confirm deletes every file the save is spread across', () => {
   const files = [P.stateFile, P.bakFile, P.eventsFile, P.processingFile, P.lockFile];
   for (const f of files) fs.writeFileSync(f, f === P.stateFile ? fs.readFileSync(P.stateFile) : 'x');
 
+  // …and the copies a save spills into. Both of these are whole save files
+  // with a playable hero inside them, so "forever" has to reach them too.
+  const spilled = [`state.corrupt-${Date.now()}.json`, 'state.v1.json']
+    .map(f => path.join(P.STATE_DIR, f));
+  for (const f of spilled) fs.writeFileSync(f, fs.readFileSync(P.stateFile));
+
   const out = run('reset', '--confirm');
   assert.match(out, /Save deleted/);
-  for (const f of files) {
+  for (const f of [...files, ...spilled]) {
     assert.ok(!fs.existsSync(f), `${path.basename(f)} survived the reset`);
   }
   assert.strictEqual(S.loadState(), null, 'a hero can still be loaded after a reset');
