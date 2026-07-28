@@ -102,36 +102,132 @@ test('retaliation never fires from a corpse, and folds into the hit anim', () =>
   assert.ok(s2.anim.every(a => a.type !== 'counter'), 'no separate counter frames');
 });
 
-test('bosses are survivable: retaliation scales to the longer fight', () => {
-  // A boss has 10x HP, so its fight runs ~10x more attacks than a trash mob.
-  // Per-attack parity with trash would make bosses unkillable rather than hard,
-  // because death restores the monster to full HP. Two guards:
+// A hero wearing a full at-level set of the given rarity — the case that
+// actually matters, and the one the balance numbers are quoted against. The old
+// guards here measured a *naked* hero, which described nobody: armour is a ratio
+// now, so def is the single biggest term in what a monster does to you.
+function gearedIn(zoneId, level, rarityId) {
+  const s = fresh();
+  const zone = C.zoneById(zoneId);
+  s.hero.level = level;
+  s.hero.zone = zoneId;
+  const mult = B.RARITIES.find(r => r.id === (rarityId || 'uncommon')).mult;
+  // The gear you actually hold when the boss comes up: trash escalates to
+  // `zone.max - 1` as the cycle fills, and ilvl tracks the monster that dropped
+  // it, so kit from the top of the band is what you face a boss wearing.
+  const ilvl = zone.max - 1;
+  for (const key of C.EQUIP_KEYS) {
+    const slot = C.keySlot(key);
+    s.equipment[key] = Object.assign({ slot, ilvl, rarity: rarityId || 'uncommon' },
+      B.itemStats(slot, ilvl, mult));
+  }
+  E.refreshMaxHp(s);
+  s.hero.hp = s.hero.maxHp;
+  return s;
+}
 
-  // 1. Structural: a longer fight must mean a *rarer* counter, not a common one.
-  assert.ok(B.RETALIATE_CHANCE_BOSS < B.RETALIATE_CHANCE,
-    'boss counters must be rarer than trash counters');
+// Weighted mean attack multiplier for a real session (see test/sim.js MIX:
+// 58% jab, 25% edits, 8% tests, 4% builds, 3% commits, 2% pushes) — not
+// jab-only, which is the slowest possible way to fight and thus the most
+// punishing, but not how anyone actually plays.
+const AVG_ATTACK_MULT = 0.58 * B.DMG.jab + 0.25 * B.lineDamageMult(20)
+  + 0.08 * 0.8 * B.DMG.test + 0.04 * B.DMG.build
+  + 0.03 * B.DMG.commit + 0.02 * B.DMG.pushVsBoss;
 
-  // 2. Numeric: expected damage across a whole boss fight stays under max HP.
-  //    Weighted mean attack multiplier for a real session (see test/sim.js MIX:
-  //    58% jab, 25% edits, 8% tests, 4% builds, 3% commits, 2% pushes) — not
-  //    jab-only, which is the slowest possible way to fight and thus the most
-  //    punishing, but not how anyone actually plays.
-  const AVG_ATTACK_MULT = 0.58 * B.DMG.jab + 0.25 * B.lineDamageMult(20)
-    + 0.08 * 0.8 * B.DMG.test + 0.04 * B.DMG.build
-    + 0.03 * B.DMG.commit + 0.02 * B.DMG.pushVsBoss;
+function bossFightCost(s) {
+  const boss = C.zoneById(s.hero.zone).boss;
+  const attacks = B.monsterMaxHp(boss.level, 0.5, true) / (E.heroAtk(s) * AVG_ATTACK_MULT);
+  const perSwing = B.monsterHitDamage(boss.level, E.heroDef(s), false) * B.RETALIATE_MULT_BOSS;
+  return attacks * B.RETALIATE_CHANCE_BOSS * perSwing / s.hero.maxHp;
+}
 
+test('a boss is dangerous but survivable for a geared hero, at every zone', () => {
+  // The guard this replaced asserted boss counters were *rarer* than trash
+  // counters, which is how the game used to stop a lost boss fight from becoming
+  // a wall: dying restored the boss to full HP, so a boss you could not beat was
+  // a boss you could never get past. hurtHero drives the boss off now, so the
+  // invariant worth holding is the honest one — a boss must be able to hurt a
+  // properly equipped hero without reliably killing them.
+  // The bounds are the design statement, not fitted numbers. Below 15% of max HP
+  // a boss is scenery. At or above 100% the *expected* outcome of a boss fight
+  // is death, which is a different game from a dangerous one — you should expect
+  // to win and occasionally not. This is measured against a merely uncommon set,
+  // the floor of "properly equipped": a player who actually chases upgrades sits
+  // far under it (the sim's attentive profile loses ~1 boss fight in 25), and
+  // that gap is the reward for managing gear at all.
+  for (const z of C.zones) {
+    const s = gearedIn(z.id, Math.min(B.LEVEL_CAP, z.max - 1));
+    const cost = bossFightCost(s);
+    assert.ok(cost > 0.15, `${z.id}: boss costs only ${(cost * 100).toFixed(0)}% of max HP — not a threat`);
+    assert.ok(cost < 1.00, `${z.id}: boss costs ${(cost * 100).toFixed(0)}% of max HP — death is the expected outcome`);
+  }
+});
+
+test('trash is attrition regen outpaces, for a geared hero', () => {
+  // The other half of the split: trash must not be what kills you. A kill takes
+  // ~4.2 events, which at any realistic typing pace is minutes of wall clock,
+  // and passive regen pays 1%/min throughout — so a few percent per kill is a
+  // race the hero wins comfortably and the HP bar stays full while grinding.
+  // Anything above that and the zone grinds you down instead.
+  const CEILING = 0.03;
+  for (const z of C.zones) {
+    const s = gearedIn(z.id, Math.min(B.LEVEL_CAP, z.max - 1));
+    const mLvl = B.monsterLevel(z, B.BOSS_KILLS_REQUIRED, 0.5);
+    const attacks = B.monsterMaxHp(mLvl, 0.5, false) / (E.heroAtk(s) * AVG_ATTACK_MULT);
+    const cost = attacks * B.RETALIATE_CHANCE
+      * B.monsterHitDamage(mLvl, E.heroDef(s), false) * B.RETALIATE_MULT / s.hero.maxHp;
+    assert.ok(cost < CEILING,
+      `${z.id}: a kill costs ${(cost * 100).toFixed(1)}% of max HP, over the ${CEILING * 100}% attrition ceiling`);
+  }
+});
+
+test('armour is a ratio: it never zeroes damage and never stops mattering', () => {
+  for (const mLvl of [1, 9, 27, 45, 60]) {
+    const naked = B.monsterHitDamage(mLvl, 0, false);
+    assert.strictEqual(naked, mLvl, `def 0 takes the full blow at mLvl ${mLvl}`);
+    // Def equal to the monster's level halves it — the anchor the curve is built on.
+    assert.strictEqual(B.monsterHitDamage(mLvl, mLvl, false), Math.max(1, Math.round(mLvl / 2)));
+    // Absurd def still never reaches zero, so no amount of gear grants immunity.
+    assert.ok(B.monsterHitDamage(mLvl, 10_000, false) >= 1);
+    // …and more def is never worse.
+    for (let d = 1; d <= 60; d++) {
+      assert.ok(B.monsterHitDamage(mLvl, d, false) <= B.monsterHitDamage(mLvl, d - 1, false),
+        `def ${d} must not take more damage than def ${d - 1} at mLvl ${mLvl}`);
+    }
+  }
+});
+
+test('losing to a boss drives it off instead of restarting the fight', () => {
   const s = fresh();
   s.hero.level = 9;
   E.refreshMaxHp(s);
   s.counters.killsSinceBoss = B.BOSS_KILLS_REQUIRED;
   E.spawnMonster(s, () => 0.5);
-  assert.ok(s.monster.isBoss);
+  assert.ok(s.monster.isBoss, 'boss is up');
+  s.hero.gold = 1000;
 
-  const attacks = s.monster.maxHp / (E.heroAtk(s) * AVG_ATTACK_MULT);
-  const perSwing = B.monsterHitDamage(s.monster.level, E.heroDef(s), false) * B.RETALIATE_MULT_BOSS;
-  const expected = attacks * B.RETALIATE_CHANCE_BOSS * perSwing;
-  assert.ok(expected < s.hero.maxHp,
-    `boss fight deals ~${Math.round(expected)} vs ${s.hero.maxHp} max HP (naked Lv9)`);
+  E.hurtHero(s, s.hero.maxHp * 5, T0 + 1000);
+
+  assert.strictEqual(s.counters.deaths, 1);
+  assert.ok(!s.monster.isBoss, 'the boss left rather than resetting to full HP');
+  assert.strictEqual(s.counters.killsSinceBoss, 0, 'the approach has to be re-earned');
+  assert.strictEqual(s.hero.hp, s.hero.maxHp, 'respawn at full HP');
+  assert.strictEqual(s.hero.gold, 1000 - Math.round(1000 * B.DEATH_GOLD_LOSS));
+  const anim = s.anim.find(a => a.type === 'death');
+  assert.ok(anim && anim.data.drovenOffBy, 'death frame names who drove you off');
+  // …and the gate agrees, so the HUD immediately stops promising a boss.
+  assert.ok(!E.bossGate(s).ready);
+});
+
+test('dying to trash restarts that fight and nothing else', () => {
+  const s = fresh();
+  s.counters.killsSinceBoss = 3;
+  assert.ok(!s.monster.isBoss);
+  s.monster.hp = 1;
+  E.hurtHero(s, s.hero.maxHp * 5, T0 + 1000);
+  assert.strictEqual(s.counters.deaths, 1);
+  assert.strictEqual(s.monster.hp, s.monster.maxHp, 'the mob is back to full');
+  assert.strictEqual(s.counters.killsSinceBoss, 3, 'boss progress survives a trash death');
 });
 
 test('level-ups follow the xp curve and full-heal', () => {

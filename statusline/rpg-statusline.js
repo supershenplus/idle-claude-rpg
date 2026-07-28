@@ -92,7 +92,9 @@ function main() {
         return R.c('brightYellow', `☠ ${anim.data.name} DEFEATED`
           + (anim.data.unlocked ? ` — ${anim.data.unlocked} unlocked` : '') + ' ☠');
       case 'death':
-        return R.c('brightRed', `✝ you died… -${anim.data.lost}g (respawned)`);
+        return R.c('brightRed', anim.data.drovenOffBy
+          ? `✝ ${anim.data.drovenOffBy} drove you off… -${anim.data.lost}g · the approach resets`
+          : `✝ you died… -${anim.data.lost}g (respawned)`);
       case 'idle':
         return R.c('cyan', `⌛ while away: ${anim.data.kills} kills +${anim.data.xp}xp +${anim.data.gold}g`);
       case 'kill':

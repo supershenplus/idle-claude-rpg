@@ -30,7 +30,15 @@ function lognormalLines(rand) {
   return Math.max(1, Math.min(B.LINE_CAP, Math.round(Math.exp(3 + n))));
 }
 
-function run(days, perDay, print) {
+// How diligently the simulated player manages their gear. Balance that only
+// holds for one of these is balance that only holds for one kind of player:
+//   upgrade — equips every drop that beats what's worn (the attentive player)
+//   fill    — only fills empty slots, never upgrades (`/hero equip all`, rarely)
+//   none    — never opens the inventory at all (the floor)
+const EQUIP_PROFILES = ['upgrade', 'fill', 'none'];
+
+function run(days, perDay, print, opts) {
+  const equip = (opts && opts.equip) || 'upgrade';
   const T0 = 1_700_000_000_000;
   const rand = mulberry32(0xC0FFEE);
   const state = E.newState('wizard', 'Sim', T0);
@@ -60,6 +68,12 @@ function run(days, perDay, print) {
       E.spawnMonster(state, rand);
     }
 
+    // …and wear what it finds. Without this the sim folded 83 days of combat
+    // with all twelve slots empty, so every number it reported — deaths above
+    // all, since mitigation was `mLvl − def` and def stayed 0 — described a hero
+    // who never once opened their inventory.
+    if (equip !== 'none') E.autoEquip(state, { displace: equip === 'upgrade' });
+
     // fold in hour-sized chunks (closer to reality than one mega-fold)
     for (let h = 0; h < 8; h++) {
       const chunk = events.filter(ev => ev.t >= dayStart + h * 3600000 && ev.t < dayStart + (h + 1) * 3600000);
@@ -81,7 +95,7 @@ function run(days, perDay, print) {
       ? `\nreached level ${B.LEVEL_CAP} on day ${capDay} at ${perDay} events/day`
       : `\nended day ${days} at level ${state.hero.level} (${perDay} events/day)`);
   }
-  return { capDay, level: state.hero.level, state, bossKillDays };
+  return { capDay, level: state.hero.level, state, bossKillDays, equip };
 }
 
 function assertBalance() {
@@ -92,8 +106,8 @@ function assertBalance() {
   };
 
   const at300 = run(150, 300, false);
-  check(at300.capDay !== null && at300.capDay >= 55 && at300.capDay <= 120,
-    `@300/day capped on day ${at300.capDay} (want 55-120)`);
+  check(at300.capDay !== null && at300.capDay >= 40 && at300.capDay <= 120,
+    `@300/day capped on day ${at300.capDay} (want 40-120)`);
 
   const at500 = run(150, 500, false);
   check(at500.capDay === null || at500.capDay >= 25,
@@ -107,6 +121,25 @@ function assertBalance() {
   const avgGap = gaps.length > 1 ? gaps.slice(1).reduce((x, y) => x + y, 0) / (gaps.length - 1) : 99;
   check(avgGap >= 0.5 && avgGap <= 4,
     `early boss cadence ≈ every ${avgGap.toFixed(1)} days (want 0.5-4)`);
+
+  // Death is meant to be punctuation: rare enough that losing a fight is an
+  // event, common enough that the HP bar is not decoration. Measured against the
+  // attentive player, since that is who the pacing is written for.
+  const deaths = at300.state.counters.deaths;
+  const perDeath = deaths ? (at300.capDay || 150) / deaths : Infinity;
+  check(deaths >= 1 && perDeath >= 4 && perDeath <= 30,
+    `attentive player dies every ${perDeath === Infinity ? '∞' : perDeath.toFixed(0)} days `
+    + `(${deaths} total, want one per 4-30 days)`);
+
+  // No profile may be walled. A boss used to reset to full HP on death, so a
+  // hero who could not win one could never progress past that zone at all —
+  // the `fill` player died ~2000 times and never reached the cap. Whatever the
+  // tuning, every way of playing has to finish.
+  for (const equip of EQUIP_PROFILES) {
+    const r = run(200, 300, false, { equip });
+    check(r.capDay !== null,
+      `equip:${equip} reaches the cap (day ${r.capDay || 'never'}, ${r.state.counters.deaths} deaths)`);
+  }
 
   process.exit(failed ? 1 : 0);
 }
