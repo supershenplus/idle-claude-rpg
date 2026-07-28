@@ -111,3 +111,51 @@ test('ranger bow limbs bulge symmetrically toward the target', () => {
   assert.strictEqual(limbs[1], limbs[2], 'upper and lower limbs off by a column');
   assert.ok(limbs[1] > limbs[0], 'limbs do not widen toward the grip');
 });
+
+// The scene has to narrate the kill it is animating, not the fight that has
+// already started. `engine.resolveKill` spawns the replacement immediately, so
+// every frame of the killing blow and the death that follows it would otherwise
+// be drawn against whatever monster happened to be standing there next.
+function renderAnim(cols, build) {
+  const st = E.newState('ranger', 'Testfixture', Date.now());
+  build(st, Date.now());
+  S.saveState(st);
+  return execFileSync('node', [CLI], {
+    env: { ...process.env, COLUMNS: String(cols), IDLE_RPG_HOME: HOME },
+    input: '{}', encoding: 'utf8',
+  });
+}
+
+const CORPSE = { id: 'treant', name: 'Rootfang the Ancient Treant', sprite: '(T)', level: 9, isBoss: true, hp: 0, maxHp: 1200 };
+
+test('the killing blow is drawn against the monster it killed', () => {
+  const out = renderAnim(100, (st, now) => {
+    st.monster = { id: 'sprite', name: 'Grove Sprite', sprite: '(s)', level: 3, isBoss: false, hp: 40, maxHp: 40 };
+    st.anim = [{ type: 'hit', at: now - 400, dur: 1500, data: { dmg: 51, crit: false, mon: CORPSE } }];
+  });
+  assert.match(out, /Rootfang/, 'the dying monster is named');
+  assert.doesNotMatch(out, /Grove Sprite/, 'its replacement is not on screen yet');
+});
+
+test('the death animation keeps the corpse on the field through the celebration', () => {
+  const out = renderAnim(100, (st, now) => {
+    st.monster = { id: 'sprite', name: 'Grove Sprite', sprite: '(s)', level: 3, isBoss: false, hp: 40, maxHp: 40 };
+    st.anim = [{ type: 'bossdown', at: now - 1000, dur: 6000, data: { name: CORPSE.name, unlocked: 'Cobalt Caves', mon: CORPSE } }];
+  });
+  assert.match(out, /DEFEATED/);
+  assert.doesNotMatch(out, /Grove Sprite/, 'the next monster does not stand in for the one being mourned');
+  const dead = sprites.DEAD_MONSTER_BIG.map(r => r.trim()).filter(Boolean)[0];
+  assert.ok(out.includes(dead), 'the corpse sprite is drawn, not a live one');
+});
+
+test('an untagged animation still renders the live monster', () => {
+  // Every anim that is not about a kill — a level up, a drop — must go on
+  // showing the fight in progress.
+  const out = renderAnim(100, (st, now) => {
+    st.monster = { id: 'sprite', name: 'Grove Sprite', sprite: '(s)', level: 3, isBoss: false, hp: 40, maxHp: 40 };
+    st.anim = [{ type: 'levelup', at: now - 500, dur: 5000, data: { level: 9 } }];
+  });
+  // A banner replaces the info row, so the name is not on screen — the sprite is.
+  assert.match(out, /LEVEL UP/);
+  assert.ok(out.includes('(s)'), 'the fight carries on underneath the banner');
+});

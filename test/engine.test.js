@@ -659,3 +659,43 @@ test('a corrupt gear stat cannot NaN the hero into a permanent death spiral', ()
   assert.ok(died <= 1, `death spiral: ${died} deaths from 5 chip hits`);
   assert.ok(Number.isFinite(s.hero.hp) && s.hero.hp > 0, `hp survived chip damage: ${s.hero.hp}`);
 });
+
+// A kill replaces state.monster on the spot, but the animations describing that
+// kill play *after* the swap — so they have to carry the monster they are about.
+// Without this the HUD ran the scene out of order: the killing blow landed on
+// the monster that had already replaced the target, then a death played for one
+// that was no longer on screen, then the new one came back.
+test('the kill animation carries the monster that died, not its replacement', () => {
+  const s = fresh('knight');
+  s.monster.hp = 1;
+  const doomed = { id: s.monster.id, name: s.monster.name, level: s.monster.level };
+  E.fold(s, [ev('commit', T0 + 1000)], T0 + 1000);
+
+  assert.strictEqual(s.counters.kills, 1, 'the commit killed it');
+  const kill = s.anim.find(a => a.type === 'kill');
+  assert.ok(kill, 'a kill animation was queued');
+  assert.ok(kill.data.mon, 'the kill animation carries its monster');
+  assert.strictEqual(kill.data.mon.id, doomed.id);
+  assert.strictEqual(kill.data.mon.name, doomed.name);
+  assert.strictEqual(kill.data.mon.level, doomed.level);
+  assert.strictEqual(kill.data.mon.hp, 0, 'and it is drawn dead');
+
+  // The blow that landed it is queued *ahead* of the kill and is about the same
+  // monster — this is the frame the bug was actually visible in.
+  const blow = s.anim.find(a => a.type === 'hit');
+  assert.ok(blow, 'the killing blow was queued');
+  assert.ok(blow.at < kill.at, 'and plays before the death');
+  assert.strictEqual(blow.data.mon && blow.data.mon.id, doomed.id,
+    'the killing blow is tagged with the monster it killed');
+});
+
+test('a non-fatal hit is not tagged with a monster', () => {
+  // Only the kill needs the copy; tagging every hit would bloat every save.
+  const s = fresh('knight');
+  s.monster.hp = 10_000;
+  E.fold(s, [ev('attack_jab', T0 + 1000)], T0 + 1000);
+  const blow = s.anim.find(a => a.type === 'hit');
+  assert.ok(blow, 'a hit was queued');
+  assert.strictEqual(blow.data.mon, undefined);
+  assert.strictEqual(s.counters.kills, 0);
+});

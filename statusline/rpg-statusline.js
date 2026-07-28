@@ -83,7 +83,15 @@ function main(stdin) {
   // ---- active animation ----
   const anim = (state.anim || []).find(a => now >= a.at && now < a.at + a.dur);
   const frame = anim ? Math.floor((now - anim.at) / sprites.FRAME_MS) : 0;
-  const dead = anim && anim.type === 'kill';
+
+  // A kill swaps `state.monster` immediately, but the animations about that kill
+  // play afterwards, so they carry their own copy of the monster they concern
+  // (`engine.resolveKill`). Rendering that copy is what keeps the scene in order
+  // — otherwise the killing blow lands on the monster that replaced the target.
+  const mon = (anim && anim.data && anim.data.mon) || m;
+  // The corpse stays on the field for the celebration too: flipping back to a
+  // live sprite under a "DEFEATED" banner reads as the wrong monster dying.
+  const dead = !!anim && (anim.type === 'kill' || anim.type === 'bossdown');
 
   const tickerLine = () => {
     const parts = [R.c('dim', zone.name)];
@@ -125,10 +133,10 @@ function main(stdin) {
 
   // Monster identity + health, the row that sits under the sprite.
   function infoText() {
-    const lvl = R.c('dim', `Lv ${m.level != null ? m.level : '?'}`);
-    const nm = `${m.isBoss ? R.c('brightRed', '☠ ') : ''}${R.c('bold', m.name || '???')}`;
-    const hpc = (m.hp || 0) / (m.maxHp || 1) < 0.25 ? 'brightRed' : 'red';
-    const hp = R.c(hpc, `HP [${R.bar(m.hp || 0, m.maxHp || 1, 10)}] ${R.fmt(m.hp || 0)}/${R.fmt(m.maxHp || 0)}`);
+    const lvl = R.c('dim', `Lv ${mon.level != null ? mon.level : '?'}`);
+    const nm = `${mon.isBoss ? R.c('brightRed', '☠ ') : ''}${R.c('bold', mon.name || '???')}`;
+    const hpc = (mon.hp || 0) / (mon.maxHp || 1) < 0.25 ? 'brightRed' : 'red';
+    const hp = R.c(hpc, `HP [${R.bar(mon.hp || 0, mon.maxHp || 1, 10)}] ${R.fmt(mon.hp || 0)}/${R.fmt(mon.maxHp || 0)}`);
     return `${lvl}  ${nm}   ${hp}`;
   }
 
@@ -150,7 +158,7 @@ function main(stdin) {
   let out;
 
   if (mode === 'compact') {
-    const monster = dead ? sprites.DEAD_MONSTER : (m.sprite || '(?)');
+    const monster = dead ? sprites.DEAD_MONSTER : (mon.sprite || '(?)');
     const mid = Math.floor(cols / 2);
     const monLeft = R.centerAt(monster, mid);
     const g = gapMarks();
@@ -164,7 +172,7 @@ function main(stdin) {
   } else {
     const monArt = dead
       ? sprites.DEAD_MONSTER_BIG
-      : sprites.bigMonster(m.id, m.sprite);
+      : sprites.bigMonster(mon.id, mon.sprite);
     const heroBig = sprites.bigHero(h.class);
     const monW = Math.max(...monArt.map(R.width));
     const heroW = Math.max(...heroBig.map(R.width));

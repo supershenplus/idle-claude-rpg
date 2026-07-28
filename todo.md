@@ -6,6 +6,29 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 
 ---
 
+## Found in play — 2026-07-28
+
+- [x] **The kill scene ran in the wrong order.** Reported from the statusline:
+      killing a monster showed the *next* one first, then the death of the last
+      one, then back. `resolveKill` spawns the replacement immediately
+      (`lib/engine.js:441`) — it has to, the next attack needs a target — but the
+      1500ms `hit` anim for the killing blow and the 2500ms `kill` anim after it
+      both play *past* that swap, and the HUD read `state.monster` every frame.
+      So the fatal blow landed on a monster that had never been in the fight
+- [x] Fixed by pinning the corpse to the animations that are about it: the
+      killing blow, the death, and the boss celebration all carry a `mon` copy,
+      and the HUD prefers it to `state.monster`. Deliberately *not* by delaying
+      the spawn — the anim queue is a render detail and the fold reducer should
+      not be waiting on it. Non-fatal hits stay untagged so ordinary combat adds
+      nothing to the save
+- [x] `bossdown` now holds the corpse on the field for its 6s too. It was
+      flipping back to a live sprite under a "DEFEATED" banner, which is the same
+      bug wearing a hat
+- [x] 5 new tests (155 total), verified to fail against the old files — 2 on the
+      engine invariant, 3 on the rendered scene
+
+---
+
 ## EOW Findings — 2026-07-28 (W1 review, base 6ad9607)
 
 Two criticals were fixed during the review, not filed: the shared-tmp save race
@@ -21,13 +44,25 @@ tests that were verified to fail without their fix. The rest:
       only job it had. Both directions are now pinned by tests, and the hardcoded
       `/Users/eva0012/...` path is out of `test/classify.test.js`.
       Still open: the same developer path remains in `docs/PLAN.md:103`
-- [ ] **W1-EOW-foreign-hook-clobber** — `bin/settings.js:41` decides a hook is
+- [x] **W1-EOW-foreign-hook-clobber** — `bin/settings.js:41` decided a hook was
       "ours" by bare substring `c.includes('rpg-hook.js')`, so a hook belonging to
-      another clone (or another tool that merely has that string in its command)
-      is silently rewritten on merge and stripped on `--remove`. Related: the
-      repair loop at :162 rewrites *every* stale entry in a group rather than
-      collapsing them, so two pre-existing entries become two identical ones and
-      the hero double-ticks. Namespace the match and dedupe to one entry per event
+      another tool that merely had that string in its command was silently
+      rewritten on merge and stripped on `--remove`. Ownership is now decided by
+      *what the command runs*: `invokedScripts()` picks the first token of each
+      `|;&`-separated segment that isn't an interpreter, a flag or a `VAR=value`,
+      and the tail must be `hooks/rpg-hook.js` — directory included, since that
+      layout is in every legitimate clone. Matching a path *token* was the first
+      attempt and was not enough: `lint.js --ignore hooks/rpg-hook.js` is a
+      perfectly good path token, and it took writing the test to see it
+- [x] The repair loop rewrote *every* stale entry in place rather than collapsing
+      them, so two pre-existing entries became two byte-identical ones and the
+      hero double-ticked — invisible, because a double tick is just a faster
+      hero. Now every copy is gathered before anything is written, one is kept
+      (an entry already pointing here, else the first stale one, repointed), and
+      the rest go along with any group *we* emptied
+- [x] 4 new tests (150 total), each verified to fail against the old file:
+      dedupe across separate groups and within one, and a `merge`+`remove`
+      round-trip over two impostor commands that survives both untouched
 - [ ] **W1-EOW-dmg-width-cap** — `statusline/rpg-statusline.js:142` builds the
       `dmg`/`counter` marks from raw values with no width cap. The base commit had
       `mid.slice(0, 24)` as a safety net; it was dropped when `row()`/`put()`
@@ -386,6 +421,18 @@ never runs under `node --test`.
       honest fix; (a) is the design decision. Note this is only sharp in the Grove:
       the ratio armour model means +1 def matters less at low mLvl, and the whole
       thing is self-correcting once ilvl spreads widen in later zones
+- [ ] **Loot goblin.** ~5% chance on spawn of getting a goblin instead of the
+      zone's trash. Kill it and it pays out one of two ways: a big slug of gold,
+      or a guaranteed epic. Open questions before this is buildable: (a) what
+      rolls the 5% — `spawnMonster` is the obvious hook, but it must not consume
+      boss-cycle kills or the goblin becomes a boss-delay tax; (b) scale the
+      payout off `killGold(mLvl)` and `itemStats(ilvl)` so it stays a windfall
+      rather than a level-8 hero holding Null-tier gear — the epic arm is the
+      dangerous one, since `BOSS_RARITY_FLOOR` currently makes epics the boss's
+      job; (c) it needs to *read* as an event — sprite, banner, and something
+      in `bannerText`, or a 1-in-20 spawn is just a monster with odd numbers.
+      Worth simming: at 300 events/day a 5% spawn is several a day, which is
+      enough to move the economy the v1.5 sink was tuned against
 - [ ] Cosmetic titles from the shop; trinket special affixes
 - [ ] Shop daily rotation (seeded by date+zone) + "Boss Drum" consumable to arm the boss early
 - [ ] Heisenbug gag: sprite renders in a different spot each frame (it moves when observed)
