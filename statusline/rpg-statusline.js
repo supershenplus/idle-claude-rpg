@@ -173,10 +173,14 @@ function main() {
       art.push(r.toString());
     }
 
+    // The banner is scene-wide so it centres on the terminal; the info row is
+    // the monster's nameplate, so it centres on the monster rather than drifting
+    // left with the hero when a narrow terminal clamps the layout.
+    const monMid = monLeft + monW / 2;
     const banner = bannerText();
     const infoRow = banner
       ? R.row().put(banner, R.centerAt(banner, mid)).toString()
-      : R.row().put(infoText(), Math.max(LEFT_MIN, R.centerAt(infoText(), mid))).toString();
+      : R.row().put(infoText(), Math.max(LEFT_MIN, R.centerAt(infoText(), monMid))).toString();
 
     out = [line1, ...art, infoRow, tickerLine()];
   }
