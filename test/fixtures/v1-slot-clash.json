@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "createdAt": 1700000000000,
+  "updatedAt": 1700000000000,
+  "lastEventAt": 1700000000000,
+  "lastTickAt": 1700000000000,
+  "hero": {
+    "name": "Clash", "class": "knight", "level": 6, "xp": 0,
+    "hp": 50, "maxHp": 50, "gold": 0, "zone": "grove", "unlockedZones": ["grove"]
+  },
+  "equipment": {
+    "weapon": { "id": "w", "slot": "weapon", "name": "Plain Grove Vest", "rarity": "common", "ilvl": 3, "atk": 2, "def": 0, "hp": 0 },
+    "armor": { "id": "a", "slot": "armor", "name": "Fine Grove Plate", "rarity": "uncommon", "ilvl": 5, "atk": 0, "def": 2, "hp": 14 },
+    "trinket": null
+  },
+  "inventory": [],
+  "monster": null,
+  "counters": {
+    "kills": 0, "bossKills": 0, "killsSinceBoss": 0, "zoneKills": {},
+    "commits": 0, "pushes": 0, "testsPassed": 0, "testsFailed": 0,
+    "linesWritten": 0, "goldEarned": 0, "deaths": 0, "lastTestXpAt": 0
+  },
+  "anim": [], "ticker": [], "eventsFolded": 0
+}
