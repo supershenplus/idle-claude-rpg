@@ -143,16 +143,33 @@ function main(stdin) {
   }
 
   // Projectile + damage numbers that live in the gap between the combatants.
-  function gapMarks() {
+  //
+  // `cells` is how much room the gap actually has. It matters because a burst of
+  // hits coalesces into a single anim — `engine.enqueue` sums `dmg` onto the one
+  // already playing, and a counter sums onto that same record — so neither
+  // number has a ceiling, and a catch-up fold can make a mark wider than the gap
+  // it lives in. `row.put` then butts the monster art on one column late; only
+  // the two rows carrying marks move, so the sprite *shears* rather than
+  // shifting, and at the extreme the far edge falls off the end of R.fit.
+  // Digits stay exact while they fit — damage is the one number you watch tick —
+  // and drop to `fmt` when they don't, rather than truncating to `✦-1234567…`,
+  // which reads as a broken renderer instead of a big hit. R.fit sits under both
+  // so no future format can reach past the gap either.
+  function gapMarks(cells) {
     if (!anim || anim.type !== 'hit') return { flight: '', dmg: '', counter: '' };
     const d = anim.data;
     const travel = Math.min(HERO_GAP - 4, frame * 3);
-    const flight = heroArt.trail.repeat(Math.min(3, travel + 1)) + heroArt.proj;
+    const flight = R.fit(heroArt.trail.repeat(Math.min(3, travel + 1)) + heroArt.proj, cells);
+    const num = (n, room) => {
+      const exact = String(Math.max(0, Math.round(n || 0)));
+      return exact.length <= room ? exact : R.fmt(Math.max(0, n || 0));
+    };
     const dmg = frame >= 2
-      ? R.c(d.crit ? 'brightRed' : 'brightYellow', `✦-${d.dmg}${d.crit ? '!' : ''}`)
+      ? R.c(d.crit ? 'brightRed' : 'brightYellow',
+        R.fit(`✦-${num(d.dmg, cells - (d.crit ? 3 : 2))}${d.crit ? '!' : ''}`, cells))
       : '';
     const counter = d.counter
-      ? R.c('brightRed', `↩-${d.counter}`)
+      ? R.c('brightRed', R.fit(`↩-${num(d.counter, cells - 2)}`, cells))
       : '';
     return { flight, dmg, counter, travel };
   }
@@ -163,10 +180,14 @@ function main(stdin) {
     const monster = dead ? sprites.DEAD_MONSTER : (mon.sprite || '(?)');
     const mid = Math.floor(cols / 2);
     const monLeft = R.centerAt(monster, mid);
-    const g = gapMarks();
+    // Compact puts flight and damage on one line, so they share the gap: the
+    // marks start a column in from the hero and stop a column short of the
+    // monster.
+    const g = gapMarks(HERO_GAP - 2);
     const scene = R.row()
       .put(heroArt.idle, Math.max(LEFT_MIN, monLeft - HERO_GAP - R.width(heroArt.idle)))
-      .put(g.flight + (g.dmg ? ' ' + g.dmg : ''), Math.max(LEFT_MIN, monLeft - HERO_GAP + 1))
+      .put(R.fit(g.flight + (g.dmg ? ' ' + g.dmg : ''), HERO_GAP - 2),
+        Math.max(LEFT_MIN, monLeft - HERO_GAP + 1))
       .put(monster, monLeft)
       .toString();
     const info = R.row().put(bannerText() || infoText(), 2).toString();
@@ -182,7 +203,9 @@ function main(stdin) {
     const monLeft = Math.max(LEFT_MIN + heroW + HERO_GAP, Math.round(mid - monW / 2));
     const heroLeft = Math.max(LEFT_MIN, monLeft - HERO_GAP - heroW);
     const gapLeft = heroLeft + heroW + 2;
-    const g = gapMarks();
+    // Derived from the layout rather than written down: the widest mark starts
+    // at gapLeft + 1 and has to stop a column short of the monster art.
+    const g = gapMarks(monLeft - gapLeft - 2);
 
     // Each art row is centred inside its own block, so ragged sprite lines
     // (a 3-cell hat over a 9-cell body) still stack straight.

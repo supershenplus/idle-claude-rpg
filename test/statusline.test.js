@@ -159,3 +159,73 @@ test('an untagged animation still renders the live monster', () => {
   assert.match(out, /LEVEL UP/);
   assert.ok(out.includes('(s)'), 'the fight carries on underneath the banner');
 });
+
+// The gap between the combatants is the only part of the scene drawn from raw
+// combat numbers, and those numbers have no ceiling: `engine.enqueue` sums
+// rapid hits into one anim and counters sum onto the same record, so a catch-up
+// fold can hand the renderer a damage figure with no bound on its width.
+const BOSS = { id: 'rootfang', name: 'Rootfang the Ancient Treant', sprite: '☠', level: 9, isBoss: true, hp: 900, maxHp: 1200 };
+
+function renderHit(cols, data) {
+  return renderAnim(cols, (st, now) => {
+    st.monster = { ...BOSS };
+    // Far enough into the anim that the damage number has appeared (frame >= 2).
+    st.anim = [{ type: 'hit', at: now - 4 * sprites.FRAME_MS, dur: 1500, data }];
+  });
+}
+
+// Where each row of the monster's big art starts, one entry per art row. Two
+// renders that differ only in the size of the numbers must agree exactly.
+function monsterColumns(out) {
+  const lines = out.split('\n').map(R.visible);
+  return sprites.bigMonster(BOSS.id, BOSS.sprite)
+    .map(r => r.trim())
+    .filter(Boolean)
+    .map((art) => {
+      const line = lines.find(l => l.includes(art));
+      assert.ok(line, `art row ${JSON.stringify(art)} is not on screen at all`);
+      return R.width(line.slice(0, line.indexOf(art)));
+    });
+}
+
+test('an ordinary hit draws the projectile and both damage marks', () => {
+  const out = renderHit(100, { dmg: 38, crit: true, counter: 7 });
+  assert.ok(out.includes('✦-38!'), 'the damage number and its crit mark are missing');
+  assert.ok(out.includes('↩-7'), 'the counter-hit mark is missing');
+  assert.ok(out.includes(sprites.heroes.ranger.proj), 'the projectile never left the bow');
+});
+
+test('a coalesced hit cannot shear the monster sprite', () => {
+  // The marks sit on two of the five art rows. Overrun does not move the whole
+  // sprite — it moves only those rows, so the failure looks like bad art.
+  const baseline = monsterColumns(renderHit(100, { dmg: 38, crit: true, counter: 7 }));
+  for (const data of [
+    { dmg: 1234567, crit: true, counter: 98765 },
+    { dmg: 1234567890, crit: true, counter: 987654321 },
+    { dmg: 1e18, crit: false, counter: 1e18 },
+  ]) {
+    assert.deepStrictEqual(monsterColumns(renderHit(100, data)), baseline,
+      `dmg ${data.dmg} pushed the monster art out of column`);
+  }
+});
+
+test('a coalesced hit cannot shove the compact monster off its centre', () => {
+  // Compact draws flight and damage on one line, so they share the gap with
+  // each other as well as with the monster. The sprite is one row here, so
+  // overrun slides it right rather than shearing it — the scene stops being
+  // centred, which is the whole point of the layout.
+  const SIGIL = '(#)';   // unique to the scene row; ☠ also appears in the nameplate
+  const compactColumn = (data) => {
+    const out = renderAnim(60, (st, now) => {
+      st.monster = { ...BOSS, sprite: SIGIL };
+      st.anim = [{ type: 'hit', at: now - 4 * sprites.FRAME_MS, dur: 1500, data }];
+    });
+    const scene = out.split('\n').map(R.visible).find(l => l.includes(SIGIL));
+    assert.ok(scene, 'the monster is not on screen');
+    assert.match(scene, /✦-/, 'the damage mark is missing');
+    return R.width(scene.slice(0, scene.indexOf(SIGIL)));
+  };
+  assert.strictEqual(compactColumn({ dmg: 1234567890, crit: true, counter: 987654321 }),
+    compactColumn({ dmg: 38, crit: true, counter: 7 }),
+    'the damage mark pushed the monster off the terminal midpoint');
+});

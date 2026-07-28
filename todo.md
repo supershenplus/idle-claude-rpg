@@ -90,13 +90,30 @@ tests that were verified to fail without their fix. The rest:
 - [x] 4 new tests (150 total), each verified to fail against the old file:
       dedupe across separate groups and within one, and a `merge`+`remove`
       round-trip over two impostor commands that survives both untouched
-- [ ] **W1-EOW-dmg-width-cap** — `statusline/rpg-statusline.js:142` builds the
-      `dmg`/`counter` marks from raw values with no width cap. The base commit had
-      `mid.slice(0, 24)` as a safety net; it was dropped when `row()`/`put()`
-      landed. Coalesced catch-up hits can sum into a wide string that shoves the
-      sprite right until `R.fit` truncates the line and the monster disappears.
-      Restore a cell budget, and add the missing `anim: hit` render fixture — no
-      test currently exercises `gapMarks()` at all
+- [x] **W1-EOW-dmg-width-cap** — `gapMarks()` built the `dmg`/`counter` marks from
+      raw values with no width cap. The base commit had `mid.slice(0, 24)` as a
+      safety net; it was dropped when `row()`/`put()` landed. `engine.enqueue`
+      sums rapid hits into one anim and counters sum onto that same record, so
+      neither number has a ceiling and a catch-up fold can hand the renderer a
+      mark wider than the gap it lives in
+- [x] The symptom is worse than "the line gets long". `row.put` butts overflowing
+      text on one column late, and only the two art rows carrying marks are
+      affected — so the monster **shears** rather than sliding, and it reads as
+      bad sprite art rather than as a renderer fault. Big art is centred near the
+      terminal midpoint, so `R.fit` never actually gets to truncate it away; the
+      shear is the whole of the damage, and it starts at 9 digits
+- [x] The budget is now derived from the layout (`monLeft - gapLeft - 2`) rather
+      than written down as a constant, so it cannot drift from `HERO_GAP` again.
+      Compact shares one line between flight and damage, so it caps the pair
+      together as well as each mark. Digits stay **exact while they fit** — damage
+      is the one number you watch tick — and fall back to `R.fmt` when they don't,
+      rather than truncating to `✦-1234567…`, which reads as a broken renderer
+      instead of a big hit. `R.fit` sits under both as the floor
+- [x] 3 new tests (164 total): the missing `anim: hit` fixture — nothing exercised
+      `gapMarks()` at all — plus two column-trueness regressions, big and compact,
+      both verified to fail against the old file. They assert the monster art
+      lands in the *same columns* as an ordinary 38-damage hit, since a check on
+      line width alone is tautological: `R.fit` guarantees it and the bug survives
 - [ ] **W1-EOW-destructive-cmd-tests** — the destructive CLI paths have no
       subprocess coverage: `sell all` / `sell <rarities>`, `upgrade <slot> max`,
       and `reset --confirm` (which unlinks state, bak, events, processing, lock).
