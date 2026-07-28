@@ -6,6 +6,28 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 
 ---
 
+## v1.9 — 2026-07-28 ✅ — you can see it without installing it
+
+- [x] **`node bin/demo.js`** renders the eleven HUD states worth looking at —
+      crit, boss intro, boss at a quarter health, boss down, level up, legendary
+      drop, kill, death, offline return, capped-with-Insight, and a fresh Lv1
+- [x] Built for the screenshots a public launch needs, but it pays for itself as
+      **coverage**: a legendary drop, a boss intro and a death are rare by
+      design, so several `bannerText` branches had never been rendered by
+      anything. Waiting for one to happen is not a test strategy
+- [x] Each scene is a synthetic save rendered by shelling out to the *real*
+      statusline. A demo carrying its own copy of the layout would keep looking
+      right long after the thing it stands in for broke
+- [x] Heroes are posed, not played — but `maxHp` comes from `E.refreshMaxHp`
+      rather than a plausible-looking constant, and a test pins the capped
+      scene's HP against what the engine actually derives. A screenshot quoting
+      numbers the engine would never produce is a screenshot that lies
+- [x] **Found by looking at it:** the death banner printed a bare `-21594g`
+      beside a vitals line reading `⛁ 410,300g`. Gold in banners now goes
+      through `fmtGold` and xp through `fmt`, same as everywhere else
+- [x] 9 new tests (117 total), incl. every scene in all three layouts and the
+      per-line-trim check applied to demo output too
+
 ## v1.8 — 2026-07-28 ✅ — installable by a stranger
 
 - [x] **MIT LICENSE.** The repo was unlicensed, which for anyone who isn't the

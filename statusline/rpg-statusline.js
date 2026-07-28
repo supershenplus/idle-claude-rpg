@@ -95,14 +95,17 @@ function main() {
       case 'bossdown':
         return R.c('brightYellow', `☠ ${anim.data.name} DEFEATED`
           + (anim.data.unlocked ? ` — ${anim.data.unlocked} unlocked` : '') + ' ☠');
+      // Gold goes through fmtGold everywhere it appears, banners included — a
+      // death at level 58 costs five figures, and `-21594g` next to a vitals
+      // line reading `⛁ 410,300g` reads as a different currency.
       case 'death':
         return R.c('brightRed', anim.data.drovenOffBy
-          ? `✝ ${anim.data.drovenOffBy} drove you off… -${anim.data.lost}g · the approach resets`
-          : `✝ you died… -${anim.data.lost}g (respawned)`);
+          ? `✝ ${anim.data.drovenOffBy} drove you off… -${R.fmtGold(anim.data.lost)} · the approach resets`
+          : `✝ you died… -${R.fmtGold(anim.data.lost)} (respawned)`);
       case 'idle':
-        return R.c('cyan', `⌛ while away: ${anim.data.kills} kills +${anim.data.xp}xp +${anim.data.gold}g`);
+        return R.c('cyan', `⌛ while away: ${anim.data.kills} kills +${R.fmt(anim.data.xp)}xp +${R.fmtGold(anim.data.gold)}`);
       case 'kill':
-        return R.c('green', `${anim.data.name} slain  +${anim.data.xp}xp +${anim.data.gold}g`);
+        return R.c('green', `${anim.data.name} slain  +${R.fmt(anim.data.xp)}xp +${R.fmtGold(anim.data.gold)}`);
       case 'loot':
         return R.rarityColored(anim.data.rarity, `≡ [${anim.data.rarity}] ${anim.data.name} dropped!`);
       default:
