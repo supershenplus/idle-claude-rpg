@@ -6,6 +6,25 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 
 ---
 
+## v1.3 — 2026-07-28 ✅
+
+- [x] Zones use their whole band. `spawnMonster` rolled `zone.min + rand()*4`
+      clamped to `zone.max`, so `zone.max` was dead data: every zone spawned only
+      its bottom 4 levels of 9 while its boss sat at the top. The Grove
+      advertised "1-9" and never spawned above Lv4, then asked for a Lv9 boss.
+      Trash now walks `min → max-1` as the boss cycle fills, so a zone escalates
+      and the boss is one step up rather than a five-level cliff
+- [x] Boss progress is driven by kills, not hero level — a hero held by the level
+      gate meets tougher trash, earns more XP, and clears the gate. The stall is
+      self-correcting instead of a flat grind
+- [x] `engine.bossGate()` is one source of truth for the spawner *and* the
+      readout. The status line used to say "Boss in 0 more kills (need Lv8+)" —
+      true and useless, because the kill counter had been satisfied for 43 kills
+      while the level gate silently held. It now names whichever gate is actually
+      binding: "Rootfang the Ancient Treant stirs — 3 levels away"
+- [x] 4 regression tests (band coverage, escalation, gate/spawner agreement,
+      readout honesty). Cap holds at day 83 @300/day; boss cadence ~3.0 days
+
 ## v1.2 — 2026-07-27 ✅
 
 - [x] Sprite art rewrite: 5-row drawn silhouettes for all 4 classes + 29
@@ -55,6 +74,17 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 - [ ] Cosmetic titles from the shop; trinket special affixes
 - [ ] Shop daily rotation (seeded by date+zone) + "Boss Drum" consumable to arm the boss early
 - [ ] Heisenbug gag: sprite renders in a different spot each frame (it moves when observed)
-- [ ] Per-session stats view; death-penalty tuning after real-world data
+- [ ] Per-session stats view
+- [ ] Death-penalty / retaliation tuning. Now measured rather than guessed:
+      `balance.js` says the retaliation constants were tuned so a kill costs
+      ~5% of max HP, but for a naked hero at each zone's gate level that figure
+      runs **1.1% in the Grove → 10.8% in Production**. It drifts because
+      incoming damage (`mLvl − def`) and attacks-per-kill (monster HP grows
+      10/level vs hero ATK ~2.2/level) both rise with level while max HP rises
+      linearly — so the cost compounds. Gear flattens it in practice, and the
+      v1.3 band fix moved it only ~+0.7pp, so this drift predates v1.3 and was
+      left alone rather than silently re-tuned inside a pacing change.
+      Sim @300/day: 198 deaths to cap (was 145 pre-v1.3), ~2.4/day late game.
+      Decide whether death should be punctuation or pressure, then tune.
 - [ ] Edit/Write `tool_response` schema is undocumented — revisit if a future
   Claude Code version documents per-tool line counts (we count from `tool_input`)
