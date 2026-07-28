@@ -23,6 +23,8 @@ test('save + load round-trips atomically (no tmp left behind)', () => {
   const s = E.newState('rogue', 'Atomic', T0);
   S.saveState(s);
   assert.ok(!fs.existsSync(P.tmpFile), 'tmp renamed away');
+  const leftovers = fs.readdirSync(HOME).filter(f => f.startsWith(P.tmpGlobPrefix));
+  assert.deepStrictEqual(leftovers, [], 'no staging file left behind');
   const loaded = S.loadState();
   assert.strictEqual(loaded.hero.name, 'Atomic');
   assert.strictEqual(loaded.version, S.CURRENT_VERSION);
@@ -112,5 +114,41 @@ test('concurrency stress: parallel appenders + folders lose (almost) nothing', (
     const st = S.loadState();
     assert.ok(st, 'state still valid JSON');
     assert.ok(st.eventsFolded >= 8 * 50 * 0.98, `folded ${st.eventsFolded}/400 (≥98% required)`);
+  });
+});
+
+test('unlocked saveState racing a locked fold never crashes or corrupts', () => {
+  // The stress test above only races tryFold, which serialises on the lock.
+  // bin/rpg.js calls saveState directly with no lock (~14 sites), so a CLI
+  // command can write the staging file while the hook's fold is mid-save.
+  // With a shared tmp path that meant one rename published the other's bytes
+  // and the loser threw ENOENT. Workers must all exit 0 and leave valid JSON.
+  S.saveState(E.newState('wizard', 'Racer', Date.now()));
+  const script = `
+    const S = require(${JSON.stringify(path.join(__dirname, '..', 'lib', 'state.js'))});
+    for (let i = 0; i < 40; i++) {
+      const st = S.loadState();
+      if (st) { st.hero.gold = (st.hero.gold || 0) + 1; S.saveState(st); }
+    }
+  `;
+  const { spawn } = require('child_process');
+  const procs = [];
+  for (let i = 0; i < 8; i++) {
+    procs.push(new Promise((res, rej) => {
+      const p = spawn(process.execPath, ['-e', script], {
+        env: { ...process.env, IDLE_RPG_HOME: HOME },
+        stdio: ['ignore', 'ignore', 'pipe'],
+      });
+      let err = '';
+      p.stderr.on('data', d => { err += d; });
+      p.on('exit', code => code === 0 ? res() : rej(new Error('writer exit ' + code + ': ' + err)));
+    }));
+  }
+  return Promise.all(procs).then(() => {
+    const st = S.loadState();
+    assert.ok(st, 'state survived concurrent unlocked writers');
+    assert.strictEqual(st.hero.name, 'Racer');
+    const leftovers = fs.readdirSync(HOME).filter(f => f.startsWith(P.tmpGlobPrefix));
+    assert.deepStrictEqual(leftovers, [], 'no staging files left behind');
   });
 });

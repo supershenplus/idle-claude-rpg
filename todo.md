@@ -6,6 +6,56 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 
 ---
 
+## EOW Findings — 2026-07-28 (W1 review, base 6ad9607)
+
+Two criticals were fixed during the review, not filed: the shared-tmp save race
+(`lib/paths.js`) and the NaN death spiral (`lib/engine.js`). Both have regression
+tests that were verified to fail without their fix. The rest:
+
+- [ ] **W1-EOW-dogfood-blind** — `lib/classify.js:56` drops classification for
+      *any* command whose text contains `idle-claude-rpg`, not just invocations of
+      the game's own CLI. Working in this repo therefore earns no XP and sounds no
+      War Horn — `cd ~/Projects/idle-claude-rpg && git commit -am fix` returns
+      `null` (reviewer confirmed live). Scope the guard to the binary invocation
+      (`bin/rpg.js` / `idle-claude-rpg status`) instead of the whole command string.
+      `test/classify.test.js:52` pins the case that *should* stay null and will
+      still pass under the narrower guard — but replace its hardcoded
+      `/Users/eva0012/...` path (also present in `docs/PLAN.md:103`) while you're
+      in there; both are developer-machine paths baked into a public repo
+- [ ] **W1-EOW-foreign-hook-clobber** — `bin/settings.js:41` decides a hook is
+      "ours" by bare substring `c.includes('rpg-hook.js')`, so a hook belonging to
+      another clone (or another tool that merely has that string in its command)
+      is silently rewritten on merge and stripped on `--remove`. Related: the
+      repair loop at :162 rewrites *every* stale entry in a group rather than
+      collapsing them, so two pre-existing entries become two identical ones and
+      the hero double-ticks. Namespace the match and dedupe to one entry per event
+- [ ] **W1-EOW-dmg-width-cap** — `statusline/rpg-statusline.js:142` builds the
+      `dmg`/`counter` marks from raw values with no width cap. The base commit had
+      `mid.slice(0, 24)` as a safety net; it was dropped when `row()`/`put()`
+      landed. Coalesced catch-up hits can sum into a wide string that shoves the
+      sprite right until `R.fit` truncates the line and the monster disappears.
+      Restore a cell budget, and add the missing `anim: hit` render fixture — no
+      test currently exercises `gapMarks()` at all
+- [ ] **W1-EOW-destructive-cmd-tests** — the destructive CLI paths have no
+      subprocess coverage: `sell all` / `sell <rarities>`, `upgrade <slot> max`,
+      and `reset --confirm` (which unlinks state, bak, events, processing, lock).
+      The `--confirm` gates were read and found correct, but nothing pins them, so
+      a refactor could drop a gate silently. Mirror the existing `insight max` test
+- [ ] **W1-EOW-migration-untested** — the v1→v2 migration body (`lib/state.js:23-52`
+      — reslot-by-noun, stat re-roll, hp refresh) has no direct test; coverage stops
+      at "fresh v2 round-trips" and "unknown version rejected". This is the one path
+      that can corrupt a real player's gear on load. Also `lib/state.js:100` only
+      refreshes the backup when it's >24h stale, so the first save after a bad
+      migration can overwrite the last good pre-migration snapshot
+
+Deferred, deliberately not filed as items: shop restock trusts the system clock
+(accepted — offline local game, same trust model as offline progress); settings
+writes don't preserve a hardened file mode; seven of eight hook fixtures in
+`test/fixtures/` are never read by any test; `test/sim.js:213 assertBalance()`
+never runs under `node --test`.
+
+---
+
 ## v2.0 — 2026-07-28 ✅ — the War Horn actually sounds, and installs work
 
 - [x] **`git push` is detected from git, not from the hook.** The classifier only
