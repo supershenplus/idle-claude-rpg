@@ -316,13 +316,29 @@ const commands = {
     const now = Date.now();
     const zone = C.zoneById(st.hero.zone);
     const { stock, rotated } = SHOP.refresh(st, now);
-    const offers = stock.offers;
+    const offers = SHOP.appraise(st, stock.offers);
+
+    // A dominated offer is still buyable — the shelf is a roll, not a
+    // recommendation, and someone stockpiling for a slot they're about to empty
+    // is entitled to it. It just no longer looks like an opportunity.
+    const VERDICT_NOTE = {
+      same: ['dim', ' · you are wearing this'],
+      worse: ['dim', ' · worse than worn'],
+    };
 
     const listShelf = (lead) => {
       console.log(`\n  ${lead}\n`);
-      offers.forEach((o, i) => console.log(
-        `  ${i + 1}. ${itemLine(o)} — ${R.fmtGold(o.price)}`
-        + (o.sale ? R.c('brightGreen', ` SALE (was ${R.fmtGold(o.listPrice)})`) : '')));
+      offers.forEach((o, i) => {
+        const note = VERDICT_NOTE[o.verdict];
+        console.log(`  ${i + 1}. ${itemLine(o)} — ${R.fmtGold(o.price)}`
+          + (o.sale ? R.c('brightGreen', ` SALE (was ${R.fmtGold(o.listPrice)})`) : '')
+          + (note ? R.c(note[0], note[1]) : ''));
+      });
+      // Banking the gold is a real move, and a shelf where every line is dead
+      // reads as "you can't afford anything" unless something says otherwise.
+      if (!offers.some(o => o.verdict === 'upgrade')) {
+        console.log(R.c('dim', '\n  Nothing here beats what you wear — the shelf rerolls every 4h.'));
+      }
       console.log(`\n  /hero shop buy <1-${offers.length}>`);
     };
 
@@ -348,7 +364,14 @@ const commands = {
       };
       E.addToInventory(st, item);
       S.saveState(st);
-      console.log(`Bought ${itemLine(item)} for ${R.fmtGold(offer.price)}. /hero equip to wear it.`);
+      // "/hero equip to wear it" is false for a dominated buy — `equip best`
+      // ranks it below what's already on and would leave it in the bag, so the
+      // player would run the command, see nothing happen, and wonder which of
+      // the two was broken.
+      console.log(`Bought ${itemLine(item)} for ${R.fmtGold(offer.price)}.`
+        + (offer.verdict === 'upgrade'
+          ? ' /hero equip to wear it.'
+          : R.c('dim', ' It stays in your bag — what you wear already beats it.')));
       return;
     }
 

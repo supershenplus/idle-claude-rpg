@@ -315,7 +315,7 @@ literally immune, while an under-geared one ate the entire curve.)
 ## Dev
 
 ```sh
-node --test 'test/*.test.js'      # 230 tests incl. concurrency stress
+node --test 'test/*.test.js'      # 237 tests incl. concurrency stress
 node test/sim.js --days 90        # replay synthetic days through the engine
 node test/sim.js --assert         # balance gates, across all three equip profiles
 node bin/demo.js --list           # HUD scenes, for screenshots and layout work

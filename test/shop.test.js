@@ -170,3 +170,85 @@ test('the restock countdown runs down to the next window boundary', () => {
   assert.strictEqual(SHOP.fmtRestock(start + HOUR), '3h 0m');
   assert.strictEqual(SHOP.fmtRestock(start + SHOP.ROTATION_MS - 90000), '2m');
 });
+
+// ---------- appraisal: telling the player which offers are dead ----------
+//
+// `rollStock` rolls ilvl uniformly over the zone span and never looks at the
+// hero, which is deliberate — it keeps the shelf a hunt rather than a vending
+// machine, and keeps it identical for two players in the same grove. The cost
+// is that a shelf can legitimately contain a copy of the weapon you're wearing
+// at full price, and an i1 with a SALE tag pointing at it. These pin the
+// listing-side fix: the roll stays honest, the *listing* stops lying.
+
+function heroWearing(spec) {
+  const s = E.newState('wizard', 'Shopper', T0);
+  for (const [key, ilvl] of Object.entries(spec)) {
+    s.equipment[key] = {
+      id: 'w_' + key, slot: C.keySlot(key), name: 'Worn ' + key,
+      rarity: 'rare', ilvl, atk: 1, def: 1, hp: 1, plus: 0,
+    };
+  }
+  return s;
+}
+function offer(slot, ilvl, rarity, extra) {
+  return Object.assign({ slot, ilvl, rarity: rarity || 'rare', price: 100, listPrice: 100, sale: false }, extra);
+}
+
+test('an offer identical to the worn item reads as already worn', () => {
+  const s = heroWearing({ weapon: 7 });
+  assert.strictEqual(SHOP.offerVerdict(s, offer('weapon', 7)), 'same');
+});
+
+test('a strictly dominated offer reads as worse, an upgrade reads as upgrade', () => {
+  const s = heroWearing({ weapon: 7 });
+  assert.strictEqual(SHOP.offerVerdict(s, offer('weapon', 1)), 'worse');
+  assert.strictEqual(SHOP.offerVerdict(s, offer('weapon', 9)), 'upgrade');
+});
+
+test('an empty slot makes any offer an upgrade', () => {
+  const s = heroWearing({});
+  assert.strictEqual(SHOP.offerVerdict(s, offer('weapon', 1, 'uncommon')), 'upgrade');
+});
+
+test('a ring is judged against the weakest of the worn set, not the best', () => {
+  const keys = C.slotKeys('ring');
+  const spec = {};
+  keys.forEach((k, i) => { spec[k] = i === 0 ? 2 : 30; });
+  const s = heroWearing(spec);
+  // Beats the i2 straggler and nothing else — still an upgrade, because buying
+  // it retires the straggler. Judging against the best worn ring would call
+  // this dead and leave the hero in the i2 indefinitely.
+  assert.strictEqual(SHOP.offerVerdict(s, offer('ring', 10)), 'upgrade');
+  assert.strictEqual(SHOP.offerVerdict(s, offer('ring', 1)), 'worse');
+});
+
+test('SALE is stripped from offers the hero cannot use, and the price is not', () => {
+  const s = heroWearing({ weapon: 7, head: 7 });
+  const shelf = SHOP.appraise(s, [
+    offer('weapon', 1, 'rare', { sale: true, price: 75, listPrice: 100 }),
+    offer('head', 9, 'rare', { sale: true, price: 75, listPrice: 100 }),
+  ]);
+  assert.strictEqual(shelf[0].sale, false, 'a dominated offer kept its SALE flourish');
+  assert.strictEqual(shelf[0].price, 75, 'stripping SALE changed what it costs');
+  assert.strictEqual(shelf[1].sale, true, 'a real upgrade lost its SALE');
+});
+
+test('appraisal does not mutate the cached shelf', () => {
+  const s = heroWearing({ weapon: 7 });
+  const raw = [offer('weapon', 1, 'rare', { sale: true })];
+  SHOP.appraise(s, raw);
+  assert.strictEqual(raw[0].sale, true, 'appraise wrote through to the saved shelf');
+  assert.ok(!('verdict' in raw[0]), 'appraise leaked a verdict into the save');
+});
+
+test('the roll still ignores the hero, so two heroes share a shelf', () => {
+  // The appraisal is per-hero; the shelf underneath it must not be, or the
+  // "same grove, same window, same five offers" property is gone.
+  const naked = heroWearing({});
+  const kitted = heroWearing(Object.fromEntries(C.EQUIP_KEYS.map(k => [k, 30])));
+  const shelf = SHOP.rollStock('grove', T0, 'wizard').offers;
+  assert.deepStrictEqual(
+    SHOP.appraise(naked, shelf).map(o => ({ ...o, verdict: null, sale: null })),
+    SHOP.appraise(kitted, shelf).map(o => ({ ...o, verdict: null, sale: null })),
+    'the offers themselves differed between two heroes');
+});

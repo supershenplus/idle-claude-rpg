@@ -129,34 +129,19 @@ this file stays readable as a list of things to do.
       `bossdown` already swap in `DEAD_MONSTER_BIG` and pin `anim.data.mon`, so
       the flinch has to end where the death begins. Pairs with the monster-attack
       items up top: same impact frame, same right-edge reserve, same corpse path
-- [ ] **Why does the Grove shop stock gear that isn't worth buying?** A real
-      shelf, rolled live at level 8 with 2,494g in hand and the boss at full HP —
-      of five offers, *two* were non-purchases and one was marginal:
-      ```
-      1. [rare] Runed Grove Wand (weapon i7) ATK+11 — 840g   ← the exact item worn
-      2. [uncommon] Fine Grove Helm (head i8) DEF+1 HP+6 — 672g
-      3. [rare] Runed Grove Focus (offhand i8) ATK+2 DEF+2 HP+5 — 960g
-      4. [rare] Runed Grove Mantle (back i4) DEF+1 HP+4 — 480g   ← +1 def changes
-      5. [rare] Runed Grove Treads (feet i1) HP+1 — 90g SALE     nothing at Lv9
-      ```
-      `rollStock` rolls ilvl uniformly over the *zone* span (grove 1-9) and never
-      looks at what the hero is wearing, so slot 1 can be a byte-identical copy of
-      the equipped weapon at full price, and slot 5 can be an i1 strictly dominated
-      by worn i7 — with the SALE tag drawing the eye straight to it. Compounding it:
-      a `+` adds 2% of what the item *rolled*, which on Grove numbers is +0.22 ATK,
-      so upgrades are also dead at this tier and there is nothing else to spend on.
-      The question isn't the balance of any one line — it's what the shelf is *for*
-      before Cobalt Caves. Options, roughly in order of how much they change:
-      (a) roll against worn ilvl so an offer is at least a sidegrade — cheap, but
-      makes the shelf a vending machine and kills the "hunt the one good slot" read;
-      (b) leave the rolls honest but mark dominated offers in the CLI (`worse than
-      worn`, and suppress SALE on them), so a bad shelf is legible rather than a
-      trap for someone who can't diff twelve slots by eye; (c) accept a dead shelf
-      as the point — you *should* sometimes bank the gold — and make waiting cost
-      nothing, which argues for the daily-rotation entry below. (b) is the small
-      honest fix; (a) is the design decision. Note this is only sharp in the Grove:
-      the ratio armour model means +1 def matters less at low mLvl, and the whole
-      thing is self-correcting once ilvl spreads widen in later zones
+- [ ] **The Grove shelf is legible now, but is it still worth *stocking*?** The
+      listing fix landed (option (b), see `BUILD-LOG.md`) so a dead offer says so
+      instead of wearing a SALE tag. That closes the trap and deliberately leaves
+      the design question open: a shelf where three of five lines read `worse than
+      worn` is honest, and still not much of a shop. Option (a) — roll ilvl against
+      what the hero wears so every offer is at least a sidegrade — remains
+      unchosen, because it turns the shelf into a vending machine and kills the
+      "hunt the one good slot" read. Worth re-asking only if the tags make the
+      Grove *feel* barren in play rather than merely look it; the effect is
+      self-correcting once ilvl spreads widen past Cobalt Caves. Related: a `+`
+      adds 2% of what the item rolled, which on Grove numbers is +0.22 ATK, so
+      upgrades are dead at that tier too and there is genuinely nothing to spend
+      gold on before the second zone
 - [ ] **Loot goblin.** ~5% chance on spawn of getting a goblin instead of the
       zone's trash. Kill it and it pays out one of two ways: a big slug of gold,
       or a guaranteed epic. Open questions before this is buildable: (a) what

@@ -19,6 +19,35 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### The shelf stopped advertising things you can't use (2026-07-28)
+
+- **The same disease as the bag, on the buying side.** `rollStock` rolls ilvl
+  uniformly over the zone span and never looks at the hero, so a Grove shelf
+  could list a byte-identical copy of the equipped weapon at full price and put
+  a SALE tag on an i1 the hero out-classes twelvefold. Reproduced exactly: at
+  Lv9 in rare i7, three of five offers were dead
+- **Fixed at the listing, not the roll — deliberately.** Option (b) of the three
+  in `todo.md`. The roll stays blind to the hero, which is what keeps the shelf a
+  hunt instead of a vending machine and keeps it identical for two players in the
+  same grove in the same window. What changed is that a dead offer now *says* so:
+  `· you are wearing this` for an exact tie, `· worse than worn` below it
+- **SALE is stripped from anything dominated; the discount itself is not.** A
+  discount is a reason to look twice, so hanging one on a strictly-beaten item
+  aims the eye at the worst line on the shelf — the single most expensive
+  mistake the listing can cause. The price stays cut, only the flourish goes
+- **`worthKeeping` did the work**, the same predicate the drop filter uses an
+  hour earlier — so the shop, the drop filter and `equip best` cannot disagree
+  about whether a thing is worth having
+- **A wholly dead shelf now says so**, because five grey lines otherwise read as
+  "you can't afford any of this". Banking the gold is a real move and the shelf
+  rerolls in 4h
+- **The buy confirmation stopped lying too.** It said "/hero equip to wear it"
+  for every purchase, which is false for a dominated buy — `equip best` ranks it
+  below what's on and leaves it in the bag, so the player would run the command,
+  watch nothing happen, and go looking for the bug in the wrong file
+- **Seven tests**, including the one guarding the property the fix is built to
+  preserve: two heroes with opposite gear still see the same five offers
+
 ### The bag stopped being a chore (2026-07-28)
 
 - **Loot is judged at the door, not on overflow.** An inventory cap exists to
