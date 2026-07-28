@@ -12,6 +12,12 @@ Map the user's arguments directly onto it:
 - `/hero` (no args) → `node <cli> status`
 - `/hero status | zone | shop | inventory | stats` → same subcommand verbatim
 - `/hero zone go <id>`, `/hero shop buy <n>`, `/hero equip <n>`, `/hero sell <n>` → pass through as-is
+- Bulk equipping: `/hero equip all` fills every *empty* slot with the best item in the bag
+  that fits. Run it immediately, no `--confirm` and no preview — it only ever adds gear,
+  so unlike bulk selling there is nothing to lose by getting it wrong.
+- The shop restocks every 4 hours, so `/hero shop` is worth re-running. If a buy comes back
+  saying the shelf restocked, nothing was bought — relay the new shelf and ask before re-buying,
+  since the numbered offers have changed.
 - Bulk selling: `/hero sell all`, or by rarity — `/hero sell commons`, `/hero sell common rare`.
   Pass the words through verbatim; the CLI does the matching. It touches the bag only,
   never equipped gear. **Two steps, always:** run it without `--confirm` first — that only

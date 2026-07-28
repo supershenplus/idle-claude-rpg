@@ -30,7 +30,8 @@ one with `RPG_HUD=big|compact|mini`.
   (gold + loot), Ranger (LOC damage + XP).
 - 7 zones from Whispering Grove to **Production** (Heisenbug, Race Condition,
   Memory Leak…), each with a boss that gates the next zone.
-- Loot in 5 rarities across 12 gear slots, a shop, and a 20-slot bag.
+- Loot in 5 rarities across 12 gear slots, a shop that restocks every 4 hours,
+  and a 20-slot bag.
 - Level cap 60 — roughly 2-4 months of regular use. Passing tests is the
   best XP (60s cooldown, don't bother loop-farming), a failing command means
   the monster hits *you*, and Stop events let your hero rest.
@@ -45,8 +46,8 @@ places.
 Every slot rolls its own stat mix, so gear reads as what it is rather than as
 twelve nouns over the same numbers — chest is the DEF anchor, head/back/feet lean
 HP, gloves and jewelry mix in ATK, offhand splits everything. Each slot has its
-own nouns (Hauberk, Mantle, Greaves, Torc, Signet…), rings drop 4× as often as
-helms since you wear four, and each zone's shop stocks a different three slots.
+own nouns (Hauberk, Mantle, Greaves, Torc, Signet…), and rings drop 4× as often
+as helms since you wear four.
 
 ```
   Gear (6/12 slots):
@@ -61,6 +62,34 @@ helms since you wear four, and each zone's shop stocks a different three slots.
 displaces something once they're all full — then the cheapest one, so putting on
 a fourth ring never quietly bins your best. `/hero equip <n> ring2` targets a
 slot explicitly.
+
+`/hero equip all` fills **every empty slot at once** with the best thing in the
+bag that fits, which is how you kit out a fresh hero or fill in the gaps after a
+good run. It is strictly additive: it never unequips, never displaces, and never
+touches a slot you already filled, so unlike bulk selling there is nothing to
+preview and nothing to undo.
+
+## Shop
+
+The shelf is a roll, not a fixture: five items in distinct slots, rarities from
+uncommon to legendary, item levels anywhere in the zone's band, the occasional
+25%-off sale — and it **restocks every 4 hours**, so gold has somewhere to go
+besides the next zone and checking the shop is worth doing twice.
+
+```
+  Whispering Grove shop — you have 599g · restocks in 3h 59m:
+
+  1. [rare] Runed Grove Wand (weapon i7) ATK+11 — 840g
+  2. [uncommon] Fine Grove Helm (head i8) DEF+1 HP+6 — 672g
+  …
+  5. [rare] Runed Grove Treads (feet i1) HP+1 — 90g SALE (was 120g)
+```
+
+The roll is seeded on (zone, 4-hour window) rather than being random per call,
+so the shelf you read is the shelf you buy from, and every zone stocks something
+different in the same window. Every restock carries at least one rare or better.
+If a rotation lands between your `shop` and your `shop buy`, the buy is cancelled
+and the new shelf printed instead of your gold going on an item you never saw.
 
 `/hero sell all` and `/hero sell commons rares` clear the bag in bulk. Both match
 a set you can't see from the command you typed, so they print what would go and
@@ -102,7 +131,7 @@ legacy gear doesn't permanently outclass every new drop for its slot.
 ## Commands
 
 `/hero` (status) · `/hero zone [go <id>]` · `/hero shop [buy <n>]` ·
-`/hero inventory` · `/hero equip <n> [slot]` ·
+`/hero inventory` · `/hero equip <n> [slot] | all` ·
 `/hero sell <n> | all | <rarity…> [--confirm]` · `/hero stats`
 
 All of it also works token-free as `! node bin/rpg.js <cmd>`.
@@ -129,7 +158,7 @@ unkillable rather than merely dangerous.
 ## Dev
 
 ```sh
-node --test 'test/*.test.js'      # 51 tests incl. concurrency stress
+node --test 'test/*.test.js'      # 64 tests incl. concurrency stress
 node test/sim.js --days 90        # replay synthetic days through the engine
 node test/sim.js --assert         # balance gates (time-to-cap, boss cadence)
 ```

@@ -10,6 +10,7 @@ const S = require('../lib/state');
 const E = require('../lib/engine');
 const B = require('../lib/balance');
 const C = require('../lib/content');
+const SHOP = require('../lib/shop');
 const R = require('../lib/render');
 const sprites = require('../lib/sprites');
 const { mulberry32 } = require('../lib/rng');
@@ -36,6 +37,59 @@ function itemLine(it, i) {
     .filter(Boolean).join(' ');
   const idx = i != null ? `${String(i + 1).padStart(2)}. ` : '';
   return `${idx}${R.rarityColored(it.rarity, `[${it.rarity}]`)} ${it.name} (${it.slot} i${it.ilvl}) ${stats}`;
+}
+
+// What an item is worth, and so which of two is "better". Shop price rolls ilvl
+// and rarity together, which is exactly the comparison both the displacement
+// rule and `equip all` want.
+function itemValue(it) {
+  return B.shopPrice(it.ilvl, (B.RARITIES.find(r => r.id === it.rarity) || { mult: 1 }).mult);
+}
+
+// `equip all`: fill every empty slot with the best thing in the bag that fits.
+// Strictly additive — it never unequips, never displaces, and never touches a
+// slot you already filled, so there is nothing to preview and nothing to undo.
+// That is the whole point: kitting out a fresh set of twelve slots one index at
+// a time is the same chore bulk selling already fixed at the other end.
+function equipEmpty(st) {
+  const empty = C.EQUIP_KEYS.filter(k => !st.equipment[k]);
+  if (!empty.length) { console.log('Every slot is already filled. /hero equip <n> to swap something out.'); return; }
+  if (!st.inventory.length) { console.log('Bag is empty — nothing to equip. Monsters drop loot as you code.'); return; }
+
+  // Best-first within a slot type, and rings are interchangeable, so taking the
+  // best remaining candidate for each key in turn is optimal.
+  const taken = new Set();
+  const filled = [];
+  for (const key of empty) {
+    const slot = C.keySlot(key);
+    let bestIdx = -1;
+    st.inventory.forEach((it, i) => {
+      if (taken.has(i) || it.slot !== slot) return;
+      if (bestIdx < 0 || itemValue(it) > itemValue(st.inventory[bestIdx])) bestIdx = i;
+    });
+    if (bestIdx < 0) continue;
+    taken.add(bestIdx);
+    filled.push({ key, item: st.inventory[bestIdx] });
+  }
+
+  if (!filled.length) {
+    console.log(`Nothing in the bag fits your ${empty.length} empty slot${empty.length === 1 ? '' : 's'}`
+      + ` (${empty.join(', ')}).`);
+    return;
+  }
+
+  st.inventory = st.inventory.filter((_, i) => !taken.has(i));
+  for (const f of filled) st.equipment[f.key] = f.item;
+  E.refreshMaxHp(st);
+  E.tick(st, `kitted out — ${filled.length} slot${filled.length === 1 ? '' : 's'} filled`);
+  S.saveState(st);
+
+  console.log(`\n  Equipped ${filled.length} item${filled.length === 1 ? '' : 's'} into empty slots:\n`);
+  for (const f of filled) console.log(`  ${f.key.padEnd(8)} ${itemLine(f.item)}`);
+  const left = C.EQUIP_KEYS.filter(k => !st.equipment[k]);
+  console.log(`\n  ATK ${Math.round(E.heroAtk(st))}  DEF ${E.heroDef(st)}  HP ${st.hero.hp}/${st.hero.maxHp}`
+    + ` · ${left.length ? `still empty: ${left.join(', ')}` : 'all twelve slots filled'}`);
+  console.log(`  Bag ${st.inventory.length}/${B.INVENTORY_CAP}.`);
 }
 
 const commands = {
@@ -124,44 +178,52 @@ const commands = {
     console.log('\n  /hero zone go <id> to travel.');
   },
 
+  // The shelf is rolled per zone per 4-hour window (see lib/shop.js), so it is
+  // stable for as long as you're looking at it and different next time.
   shop() {
     const st = requireSave();
+    const now = Date.now();
     const zone = C.zoneById(st.hero.zone);
-    const ilvl = Math.min(zone.max, zone.min + 2);
-    // fixed per-zone offers: one uncommon, one rare, one epic
-    // Each zone stocks a different three slots, walking the slot list as you
-    // travel, so the shop isn't the same weapon/armor/trinket rack everywhere.
-    const shopSlots = [0, 1, 2].map(i =>
-      C.SLOT_TYPES[(C.zoneIndex(zone.id) * 3 + i) % C.SLOT_TYPES.length]);
-    const offers = ['uncommon', 'rare', 'epic'].map((rid, i) => {
-      const rarity = B.RARITIES.find(r => r.id === rid);
-      const slot = shopSlots[i].id;
-      const stats = B.itemStats(slot, ilvl, rarity.mult);
-      return {
-        slot, rarity: rid, ilvl, ...stats,
-        name: `${C.RARITY_ADJ[rid]} ${zone.flavor} ${shopSlots[i].nouns[0]}`,
-        price: B.shopPrice(ilvl, rarity.mult),
-      };
-    });
+    const { stock, rotated } = SHOP.refresh(st, now);
+    const offers = stock.offers;
+
+    const listShelf = (lead) => {
+      console.log(`\n  ${lead}\n`);
+      offers.forEach((o, i) => console.log(
+        `  ${i + 1}. ${itemLine(o)} — ${R.fmtGold(o.price)}`
+        + (o.sale ? R.c('brightGreen', ` SALE (was ${R.fmtGold(o.listPrice)})`) : '')));
+      console.log(`\n  /hero shop buy <1-${offers.length}>`);
+    };
+
     if (args[0] === 'buy') {
       const n = parseInt(args[1], 10);
+      // A rotation between reading the shelf and buying off it would spend the
+      // player's gold on an item they never saw, so it cancels the buy and
+      // shows the new shelf instead.
+      if (rotated) {
+        S.saveState(st);
+        listShelf(`${zone.name} restocked before that went through — nothing bought.`
+          + ` You have ${R.fmtGold(st.hero.gold)}:`);
+        return;
+      }
       const offer = offers[n - 1];
-      if (!offer) { console.log('Usage: /hero shop buy <1-3>'); process.exit(1); }
+      if (!offer) { console.log(`Usage: /hero shop buy <1-${offers.length}>`); process.exit(1); }
       if (st.hero.gold < offer.price) { console.log(`Not enough gold (${R.fmtGold(st.hero.gold)} < ${R.fmtGold(offer.price)}).`); process.exit(1); }
       st.hero.gold -= offer.price;
       const item = {
-        id: 'itm_shop' + Date.now().toString(36), slot: offer.slot, name: offer.name,
+        id: 'itm_shop' + now.toString(36), slot: offer.slot, name: offer.name,
         rarity: offer.rarity, ilvl: offer.ilvl, atk: offer.atk, def: offer.def, hp: offer.hp,
-        from: 'shop', at: Date.now(),
+        from: 'shop', at: now,
       };
       E.addToInventory(st, item);
       S.saveState(st);
       console.log(`Bought ${itemLine(item)} for ${R.fmtGold(offer.price)}. /hero equip to wear it.`);
       return;
     }
-    console.log(`\n  ${zone.name} shop — you have ${R.fmtGold(st.hero.gold)}:\n`);
-    offers.forEach((o, i) => console.log(`  ${i + 1}. ${itemLine(o)} — ${R.fmtGold(o.price)}`));
-    console.log('\n  /hero shop buy <n>');
+
+    S.saveState(st);
+    listShelf(`${zone.name} shop — you have ${R.fmtGold(st.hero.gold)}`
+      + ` · restocks in ${SHOP.fmtRestock(now)}:`);
   },
 
   inventory() {
@@ -169,17 +231,21 @@ const commands = {
     if (!st.inventory.length) { console.log('Bag is empty. Monsters drop loot as you code.'); return; }
     console.log(`\n  Bag (${st.inventory.length}/${B.INVENTORY_CAP}):\n`);
     st.inventory.forEach((it, i) => console.log('  ' + itemLine(it, i)));
-    console.log('\n  /hero equip <n> · /hero sell <n> · /hero sell commons rares · /hero sell all');
+    console.log('\n  /hero equip <n> · /hero equip all · /hero sell <n> · /hero sell commons rares · /hero sell all');
   },
 
   // `equip <n>` fills the first free slot of the item's kind and only displaces
   // something when they're all full — and then the cheapest one, so putting on a
-  // fourth ring never quietly bins your best.
+  // fourth ring never quietly bins your best. `equip all` fills every *empty*
+  // slot at once and displaces nothing at all.
   equip() {
     const st = requireSave();
+    const word = String(args[0] || '').toLowerCase();
+    if (word === 'all' || word === 'empty') return equipEmpty(st);
+
     const n = parseInt(args[0], 10);
     const item = st.inventory[n - 1];
-    if (!item) { console.log('Usage: /hero equip <n> [slot] (see /hero inventory)'); process.exit(1); }
+    if (!item) { console.log('Usage: /hero equip <n> [slot] | all  (see /hero inventory)'); process.exit(1); }
 
     const keys = C.slotKeys(item.slot);
     if (!keys.length) { console.log(`${item.name} has an unknown slot "${item.slot}".`); process.exit(1); }
@@ -191,10 +257,9 @@ const commands = {
         process.exit(1);
       }
     } else {
-      const value = it => B.shopPrice(it.ilvl, (B.RARITIES.find(r => r.id === it.rarity) || { mult: 1 }).mult);
       target = keys.find(k => !st.equipment[k])
         || keys.slice(1).reduce((worst, k) =>
-          value(st.equipment[k]) < value(st.equipment[worst]) ? k : worst, keys[0]);
+          itemValue(st.equipment[k]) < itemValue(st.equipment[worst]) ? k : worst, keys[0]);
     }
 
     st.inventory.splice(n - 1, 1);
@@ -246,8 +311,7 @@ const commands = {
     if (!picked.length) { console.log(`Nothing in the bag matches "${words.join(' ')}".`); return; }
 
     const sold = picked.map(i => st.inventory[i]);
-    const value = it => Math.round(
-      B.shopPrice(it.ilvl, (B.RARITIES.find(r => r.id === it.rarity) || { mult: 1 }).mult) * B.SELL_FRAC);
+    const value = it => Math.round(itemValue(it) * B.SELL_FRAC);
     const gold = sold.reduce((sum, it) => sum + value(it), 0);
 
     if (bulk && !flag('confirm')) {
