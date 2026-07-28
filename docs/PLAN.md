@@ -100,7 +100,7 @@ Classes (init choice; distinct sprite + one mechanic): **Wizard** `(∩｀-´)�
 
 CLI is plain-text, non-interactive (works via `!` and via skill): `init [--class X --name Y]` (no args prints class menu + exact commands), `status`, `zone [go <id>]`, `shop [buy <n>]`, `inventory`, `equip <id>`, `sell <id>`, `stats`, plus dev utils `fold`, `sim <days> <events/day>`, `reset --confirm`.
 
-Skill `~/.claude/skills/hero/SKILL.md`: frontmatter `name: hero`, `allowed-tools: Bash(node /Users/eva0012/Projects/idle-claude-rpg/bin/rpg.js *)`. Body: map `$ARGUMENTS` → CLI call, **relay output verbatim in a code fence** (minimal tokens). `init` with no args → AskUserQuestion for class (4 options with flavor) + name, then run `init --class X --name Y`. This solves first-run interactivity.
+Skill `~/.claude/skills/hero/SKILL.md`: frontmatter `name: hero`, `allowed-tools: Bash(node {{REPO}}/bin/rpg.js *)` (the installer substitutes `{{REPO}}` for the clone's absolute path). Body: map `$ARGUMENTS` → CLI call, **relay output verbatim in a code fence** (minimal tokens). `init` with no args → AskUserQuestion for class (4 options with flavor) + name, then run `init --class X --name Y`. This solves first-run interactivity.
 
 ## Installer + wiring
 

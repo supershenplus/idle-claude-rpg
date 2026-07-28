@@ -322,3 +322,45 @@ test('print emits the snippet with this clone’s absolute paths', () => {
   assert.ok(out.includes(LINE_JS));
   assert.match(out, /"statusLine"/);
 });
+
+// `merge` writes by create-then-rename, which replaces the inode — so the mode
+// of the file that ends up in place is the mode of the temp file, not the one
+// the user set. A settings.json hardened to 0600 silently came back at the umask
+// default, widening permissions on the file that names every executable Claude
+// Code runs as a side effect of an unrelated merge.
+test('merge preserves a hardened settings.json file mode', () => {
+  const { dir, file } = sandbox({ hooks: { PreToolUse: [GUARDRAIL] } });
+  fs.chmodSync(file, 0o600);
+  run(dir, ['merge']);
+  assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600,
+    'the hardened mode did not survive the write');
+  // The backup is a copy of the same secrets and must not be the loose one.
+  const bak = fs.readdirSync(dir).find(f => f.startsWith('settings.json.bak-'));
+  assert.ok(bak, 'no backup was taken');
+  assert.strictEqual(fs.statSync(path.join(dir, bak)).mode & 0o777, 0o600,
+    'the backup is more permissive than the file it copied');
+  assert.ok(!fs.existsSync(`${file}.tmp`), 'the temp file outlived the write');
+});
+
+// A tmp left behind by a crashed run is reused as-is, and `mode` on
+// writeFileSync applies only when the file is created — so without clearing it
+// first the settings body lands at a predictable path under the stale file's
+// permissions for as long as the rename takes.
+test('merge does not inherit a stale temp file’s permissions', () => {
+  const { dir, file } = sandbox({ hooks: { PreToolUse: [GUARDRAIL] } });
+  fs.chmodSync(file, 0o600);
+  fs.writeFileSync(`${file}.tmp`, '{"junk":true}\n');
+  fs.chmodSync(`${file}.tmp`, 0o666);
+  run(dir, ['merge']);
+  assert.strictEqual(fs.statSync(file).mode & 0o777, 0o600,
+    'the stale temp file’s mode leaked into the settings file');
+});
+
+// The other half of the same rule: a file the user never hardened must not be
+// hardened *for* them. Preserving a mode and picking one are different calls.
+test('merge leaves an ordinary settings.json mode alone', () => {
+  const { dir, file } = sandbox({ hooks: { PreToolUse: [GUARDRAIL] } });
+  fs.chmodSync(file, 0o644);
+  run(dir, ['merge']);
+  assert.strictEqual(fs.statSync(file).mode & 0o777, 0o644);
+});

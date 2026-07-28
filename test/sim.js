@@ -134,12 +134,14 @@ function run(days, perDay, print, opts) {
   };
 }
 
+// Returns the checks rather than printing and exiting, so the same run can be
+// a CLI report (`--assert`, below) and a set of `node --test` cases
+// (`balance.test.js`). It used to do both inline, which meant the assertions
+// only ever ran when someone remembered to invoke this file by hand — the whole
+// balance curve sat outside the suite that gates every commit.
 function assertBalance() {
-  let failed = false;
-  const check = (cond, msg) => {
-    console.log((cond ? 'ok:   ' : 'FAIL: ') + msg);
-    if (!cond) failed = true;
-  };
+  const results = [];
+  const check = (cond, msg) => { results.push({ ok: !!cond, msg }); };
 
   const at300 = run(150, 300, false);
   check(at300.capDay !== null && at300.capDay >= 40 && at300.capDay <= 120,
@@ -205,13 +207,16 @@ function assertBalance() {
       `equip:${equip} reaches the cap (day ${r.capDay || 'never'}, ${r.state.counters.deaths} deaths)`);
   }
 
-  process.exit(failed ? 1 : 0);
+  return results;
 }
 
 if (require.main === module) {
   const argv = process.argv.slice(2);
-  if (argv.includes('--assert')) assertBalance();
-  else {
+  if (argv.includes('--assert')) {
+    const results = assertBalance();
+    for (const r of results) console.log((r.ok ? 'ok:   ' : 'FAIL: ') + r.msg);
+    process.exit(results.some(r => !r.ok) ? 1 : 0);
+  } else {
     const get = (name, dflt) => {
       const i = argv.indexOf('--' + name);
       return i >= 0 ? parseInt(argv[i + 1], 10) : dflt;

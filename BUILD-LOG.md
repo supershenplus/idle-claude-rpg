@@ -68,6 +68,45 @@ is in `docs/PLAN.md`.
   `todo.md` with the retest design
 - 14 new tests (**191 total**)
 
+### Carried debt — all four items closed (2026-07-28)
+
+- **The four things the W1 review deferred rather than fixed**, cleared together
+  because each was small and none was getting smaller. 192 → 225 tests
+- **Settings writes no longer widen a hardened file.** `writeSettings` is
+  create-then-rename, so the mode that ends up in place is the temp file's, not
+  the user's: a `settings.json` hardened to 0600 came back at the umask default.
+  That is a silent permission widening on the file naming every executable Claude
+  Code runs, as a side effect of an unrelated merge. Now stats the live file and
+  re-asserts its mode on the temp before the rename. Two details worth keeping:
+  a temp left by a crashed run is `rm`'d first, because `mode` on `writeFileSync`
+  applies only on create and the settings body would otherwise sit at a
+  predictable path under stale permissions; and a *new* file still takes the
+  umask default, since preserving a mode the user chose and picking one for them
+  are different decisions and only the first was the debt
+- **The balance sim runs under `node --test` now.** `assertBalance()` printed and
+  called `process.exit`, so its twelve checks — does a heavy day reach the cap in
+  40-120 days, do all three equip profiles finish, does the gold sink absorb the
+  gold — only ran when someone typed the command by hand. The one thing in the
+  repo that can tell you a tuning change made the game unwinnable was the one
+  thing not gating a commit, and `lib/balance.js` is full of numbers that get
+  nudged casually. It returns its results now; the CLI keeps printing and exiting
+  on them, and `test/balance.test.js` makes each check its own case so a failure
+  names the property. Unconditional because it is ~0.25s and deterministic —
+  fixed seed, fixed epoch. Verified by moving `LEVEL_CAP` 60 → 90: three checks
+  fail, naming the sink and the death cadence
+- **The hook fixtures are used by a test.** Seven recorded Claude Code payloads
+  had sat in `test/fixtures/` since v1 with only `install.sh` reading one of
+  them. They were the repo's only record of the shape Claude Code actually sends,
+  and nothing checked `lib/classify.js` still understood it — a payload change
+  upstream would have surfaced as the hero quietly never levelling again, because
+  the hook fails open and says nothing by design. `test/hook.test.js` runs each
+  fixture through `classify` for the mapping and through the real hook binary for
+  the whole chain, plus the two properties that keep this game out of the user's
+  actual work: stdout stays empty, and junk input exits clean
+- **The developer path is out of `docs/PLAN.md`.** It described the skill
+  frontmatter with an absolute `/Users/eva0012/…` where the template has
+  `{{REPO}}` — stale as well as leaky, since the installer does the substitution
+
 ### Found in play — the counter-hit drew before the blow (2026-07-28)
 
 - **Reported from the statusline: the monster's blow appeared to drive the

@@ -81,18 +81,6 @@ this file stays readable as a list of things to do.
 
 ---
 
-## Known-carried debt
-
-- [ ] The developer path `/Users/eva0012/...` still sits in `docs/PLAN.md:103`.
-      It came out of `test/classify.test.js` during the W1 review and was never
-      chased into the doc
-- [ ] Deferred during the W1 review and still true: settings writes don't
-      preserve a hardened file mode; seven of eight hook fixtures in
-      `test/fixtures/` are never read by any test; `test/sim.js:213
-      assertBalance()` never runs under `node --test`
-
----
-
 ## Backlog
 
 - [ ] Two smaller sprite nits, both cosmetic and both long-deferred: `harpy` has

@@ -102,8 +102,25 @@ function writeSettings(data, { backup = true } = {}) {
     for (let n = 2; fs.existsSync(bak); n++) bak = `${SETTINGS}.bak-${stamp}-${n}`;
     fs.copyFileSync(SETTINGS, bak);
   }
+  // Preserve whatever mode the live file had. The write is create-then-rename,
+  // so without this a settings.json the user had hardened to 0600 comes back at
+  // the umask default — we would silently widen permissions on the file that
+  // names every executable Claude Code runs, as a side effect of an unrelated
+  // merge. Nothing here *hardens* a file: a first write takes the umask default,
+  // same as before, because picking a mode for a file we are creating on the
+  // user's behalf is a different decision from not wrecking one they set.
+  let mode = null;
+  try { mode = fs.statSync(SETTINGS).mode & 0o777; } catch (_) { /* first write */ }
   const tmp = `${SETTINGS}.tmp`;
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2) + '\n');
+  // A tmp left behind by a crashed run would be reused as-is — `mode` below
+  // applies only when the file is created — which would put the whole settings
+  // body at a predictable path under that stale file's permissions for as long
+  // as the rename takes.
+  fs.rmSync(tmp, { force: true });
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2) + '\n', mode == null ? {} : { mode });
+  // umask can only take bits away from the create above, so re-assert the exact
+  // mode now the content is down rather than settling for "no wider than".
+  if (mode != null) fs.chmodSync(tmp, mode);
   fs.renameSync(tmp, SETTINGS);
   return bak;
 }
