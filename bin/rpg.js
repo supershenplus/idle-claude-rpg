@@ -33,10 +33,13 @@ function requireSave() {
 }
 
 function itemLine(it, i) {
-  const stats = [it.atk && `ATK+${it.atk}`, it.def && `DEF+${it.def}`, it.hp && `HP+${it.hp}`]
-    .filter(Boolean).join(' ');
+  // Upgraded stats, since those are the ones actually fighting for you. The
+  // rolled numbers stay on the item and show up in `/hero upgrade`.
+  const a = E.itemStat(it, 'atk'), d = E.itemStat(it, 'def'), h = E.itemStat(it, 'hp');
+  const stats = [a && `ATK+${a}`, d && `DEF+${d}`, h && `HP+${h}`].filter(Boolean).join(' ');
   const idx = i != null ? `${String(i + 1).padStart(2)}. ` : '';
-  return `${idx}${R.rarityColored(it.rarity, `[${it.rarity}]`)} ${it.name} (${it.slot} i${it.ilvl}) ${stats}`;
+  const plus = it.plus ? R.c('brightYellow', ` +${it.plus}`) : '';
+  return `${idx}${R.rarityColored(it.rarity, `[${it.rarity}]`)} ${it.name}${plus} (${it.slot} i${it.ilvl}) ${stats}`;
 }
 
 // What an item is worth, and so which of two is "better" — shared with the
@@ -190,7 +193,7 @@ const commands = {
       const item = {
         id: 'itm_shop' + now.toString(36), slot: offer.slot, name: offer.name,
         rarity: offer.rarity, ilvl: offer.ilvl, atk: offer.atk, def: offer.def, hp: offer.hp,
-        from: 'shop', at: now,
+        plus: 0, from: 'shop', at: now,
       };
       E.addToInventory(st, item);
       S.saveState(st);
@@ -208,7 +211,7 @@ const commands = {
     if (!st.inventory.length) { console.log('Bag is empty. Monsters drop loot as you code.'); return; }
     console.log(`\n  Bag (${st.inventory.length}/${B.INVENTORY_CAP}):\n`);
     st.inventory.forEach((it, i) => console.log('  ' + itemLine(it, i)));
-    console.log('\n  /hero equip <n> · /hero equip all · /hero sell <n> · /hero sell commons rares · /hero sell all');
+    console.log('\n  /hero equip <n> · /hero equip all · /hero upgrade · /hero sell <n> · /hero sell commons rares · /hero sell all');
   },
 
   // `equip <n>` fills the first free slot of the item's kind and only displaces
@@ -288,7 +291,7 @@ const commands = {
     if (!picked.length) { console.log(`Nothing in the bag matches "${words.join(' ')}".`); return; }
 
     const sold = picked.map(i => st.inventory[i]);
-    const value = it => Math.round(itemValue(it) * B.SELL_FRAC);
+    const value = E.sellPrice;   // blind to `plus` — upgrade gold never comes back
     const gold = sold.reduce((sum, it) => sum + value(it), 0);
 
     if (bulk && !flag('confirm')) {
@@ -311,6 +314,101 @@ const commands = {
     console.log(`\n  Sold ${sold.length} items for ${R.fmtGold(gold)}:\n`);
     sold.forEach(it => console.log(`  ${itemLine(it)} — ${R.fmtGold(value(it))}`));
     console.log(`\n  Bag ${st.inventory.length}/${B.INVENTORY_CAP} · you have ${R.fmtGold(st.hero.gold)}.`);
+  },
+
+  // Gold's only permanent home. Restricted to *worn* gear on purpose: those are
+  // the stats actually fighting, and pouring gold into a bagged item you then
+  // displace is a mistake the game shouldn't sell you.
+  upgrade() {
+    const st = requireSave();
+    const word = (args[0] || '').toLowerCase();
+
+    const shelf = () => {
+      console.log(`\n  Upgrades — you have ${R.fmtGold(st.hero.gold)}:\n`);
+      let cheapest = null;
+      for (const key of C.EQUIP_KEYS) {
+        const it = st.equipment[key];
+        if (!it) { console.log(`  ${key.padEnd(8)} ${R.c('dim', '(empty)')}`); continue; }
+        const plus = it.plus || 0;
+        if (plus >= B.UPGRADE_MAX) {
+          console.log(`  ${key.padEnd(8)} ${itemLine(it)} — ${R.c('brightYellow', 'MAX')}`);
+          continue;
+        }
+        const cost = B.upgradeCost(it.ilvl, plus);
+        const afford = st.hero.gold >= cost;
+        if (afford && (!cheapest || cost < cheapest.cost)) cheapest = { key, cost };
+        console.log(`  ${key.padEnd(8)} ${itemLine(it)} — +${plus + 1} costs `
+          + `${afford ? R.fmtGold(cost) : R.c('dim', R.fmtGold(cost))}`);
+      }
+      console.log(`\n  Each + adds ${Math.round(B.UPGRADE_STAT_PER_PLUS * 100)}% of what the item rolled,`
+        + ` up to +${B.UPGRADE_MAX}. Upgrades are not refunded when you sell.`);
+      console.log(cheapest
+        ? `  /hero upgrade <slot> · /hero upgrade <slot> max   (cheapest: ${cheapest.key}, ${R.fmtGold(cheapest.cost)})`
+        : '  /hero upgrade <slot> — nothing is affordable yet.');
+    };
+
+    if (!word) return shelf();
+
+    const it = st.equipment[word];
+    if (!it) {
+      console.log(C.EQUIP_KEYS.includes(word)
+        ? `Nothing equipped in ${word}. /hero equip all`
+        : `Unknown slot "${word}". One of: ${C.EQUIP_KEYS.join(', ')}`);
+      process.exit(1);
+    }
+
+    // `max` pours gold in until it runs out, so it previews like bulk selling.
+    if ((args[1] || '').toLowerCase() === 'max') {
+      const before = it.plus || 0;
+      let steps = 0, spend = 0, p = before;
+      while (p < B.UPGRADE_MAX && spend + B.upgradeCost(it.ilvl, p) <= st.hero.gold) {
+        spend += B.upgradeCost(it.ilvl, p); p += 1; steps += 1;
+      }
+      if (!steps) {
+        console.log(`Cannot afford +${before + 1} on ${it.name} `
+          + `(${R.fmtGold(B.upgradeCost(it.ilvl, before))}, you have ${R.fmtGold(st.hero.gold)}).`);
+        return;
+      }
+      if (!flag('confirm')) {
+        // Show the totals it would actually buy. At 2% a level, upgrading a
+        // small early item can round to no visible change at all, and the
+        // player deserves to see that before the gold is gone rather than after.
+        const was = { atk: Math.round(E.heroAtk(st)), def: E.heroDef(st), hp: E.heroMaxHp(st) };
+        const restore = it.plus || 0;
+        it.plus = p;
+        const now2 = { atk: Math.round(E.heroAtk(st)), def: E.heroDef(st), hp: E.heroMaxHp(st) };
+        it.plus = restore;
+        const arrow = (a, b) => (a === b ? R.c('dim', `${a} → ${b}`) : `${a} → ${b}`);
+        console.log(`\n  This would take ${itemLine(it)}`);
+        console.log(`  from +${before} to +${p} for ${R.fmtGold(spend)}, leaving ${R.fmtGold(st.hero.gold - spend)}.`);
+        console.log(`  ATK ${arrow(was.atk, now2.atk)}   DEF ${arrow(was.def, now2.def)}   max HP ${arrow(was.hp, now2.hp)}`);
+        if (was.atk === now2.atk && was.def === now2.def && was.hp === now2.hp) {
+          console.log(R.c('dim', '  (rounds to no change — this item is too small to be worth it yet)'));
+        }
+        console.log(`\n  Nothing spent yet — confirm with:  /hero upgrade ${word} max --confirm`);
+        return;
+      }
+      for (let i = 0; i < steps; i++) E.upgradeItem(st, it);
+      E.tick(st, `${it.name} +${it.plus}`);
+      S.saveState(st);
+      console.log(`\n  ${itemLine(it)}`);
+      console.log(`  +${before} → +${it.plus} for ${R.fmtGold(spend)}. `
+        + `ATK ${Math.round(E.heroAtk(st))}  DEF ${E.heroDef(st)}  HP ${st.hero.hp}/${st.hero.maxHp} · ${R.fmtGold(st.hero.gold)} left.`);
+      return;
+    }
+
+    const res = E.upgradeItem(st, it);
+    if (!res.ok) {
+      console.log(res.why === 'maxed'
+        ? `${it.name} is already at +${B.UPGRADE_MAX}, the maximum.`
+        : `Not enough gold: +${(it.plus || 0) + 1} on ${it.name} costs ${R.fmtGold(res.cost)}, you have ${R.fmtGold(st.hero.gold)}.`);
+      process.exit(1);
+    }
+    E.tick(st, `${it.name} +${it.plus}`);
+    S.saveState(st);
+    console.log(`\n  ${itemLine(it)}`);
+    console.log(`  +${res.plus - 1} → +${res.plus} for ${R.fmtGold(res.cost)}. `
+      + `ATK ${Math.round(E.heroAtk(st))}  DEF ${E.heroDef(st)}  HP ${st.hero.hp}/${st.hero.maxHp} · ${R.fmtGold(st.hero.gold)} left.`);
   },
 
   stats() {
@@ -345,7 +443,7 @@ const commands = {
 
 const fn = commands[cmd];
 if (!fn) {
-  console.log('idle-claude-rpg — commands: init status zone shop inventory equip sell stats fold sim reset');
+  console.log('idle-claude-rpg — commands: init status zone shop inventory equip upgrade sell stats fold sim reset');
   process.exit(cmd ? 1 : 0);
 }
 fn();

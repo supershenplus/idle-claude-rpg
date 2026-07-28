@@ -76,6 +76,7 @@ Missing/ambiguous exit code → treat as success (fail open toward fun). Kill: X
 - **Boss:** after 15 zone kills + level gate (`hero ≥ bossLevel−1`) → next spawn is boss (10× HP ≈ one focused hour, 8× XP, guaranteed rare+ loot). Boss kill unlocks next zone. `engine.bossGate()` is the single source of truth for both the spawner and the readout, so the HUD can never report a gate the spawner disagrees with.
 - **Loot:** 18% drop/kill (rogue ×1.5, boss/push 100%). Rarity weights 60/25/10/4/1 (common→legendary), stat mult 1.0/1.4/2.0/3.0/4.5, ilvl = mLvl. Legendaries get per-zone names.
 - **Shop:** price `60·ilvl·rarityMult` (~a day's gold for at-level rare); sell-back 25%.
+- **Upgrading (the gold sink):** worn gear only, `+0…+10`, each `+` worth 2% of the item's rolled stats. Cost `5·ilvl·(plus+1)²` — quadratic, so a full set at +10 runs ~1.16M, about a whole run's income, and you are always choosing. `engine.sellPrice` ignores `plus` so the gold is *destroyed*; `engine.itemValue` counts it so auto-equip never benches an item you invested in. Without this an attentive player finished holding ~1.07M with nothing to buy, and the figure barely moved whatever the death penalty was. Note `gearSum` totals all twelve slots **unrounded** and rounds once: at 2% a level most single upgrades are sub-integer, and rounding per-slot discarded nearly all of them.
 
 ## Classes & zones
 

@@ -1,6 +1,6 @@
 ---
 name: hero
-description: idle-claude-rpg controls — init, status, shop, zone, inventory, equip, sell, stats. Use when the user types /hero or asks about their idle RPG hero, their loot, or the monster in the statusline.
+description: idle-claude-rpg controls — init, status, shop, zone, inventory, equip, upgrade, sell, stats. Use when the user types /hero or asks about their idle RPG hero, their loot, or the monster in the statusline.
 allowed-tools: Bash(node /Users/eva0012/Projects/idle-claude-rpg/bin/rpg.js *)
 ---
 
@@ -25,6 +25,13 @@ Map the user's arguments directly onto it:
   says yes. Never add `--confirm` yourself on the first call, even if the user sounded
   decisive: the point of the preview is that they see which items match before the gold is
   the only thing left. `/hero sell <n>` is a single named item and sells immediately.
+- Upgrading: `/hero upgrade` lists every worn slot with the cost of its next `+`.
+  `/hero upgrade <slot>` buys one level immediately — it is a single small purchase,
+  so no preview. `/hero upgrade <slot> max` pours in everything affordable and is
+  **two steps like bulk selling**: run it without `--confirm`, relay the preview
+  (it shows the ATK/DEF/HP the spend would actually buy, and warns when the gain
+  rounds to nothing), then re-run with `--confirm` once the user says yes.
+  Upgrades apply to *worn* gear only and are never refunded when you sell.
 - `/hero reset` → warn that this deletes the hero, and only run with `--confirm` after the user confirms
 
 ## First-run init

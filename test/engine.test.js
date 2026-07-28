@@ -391,6 +391,84 @@ test('bossGateText always names the gate that is actually binding', () => {
   assert.ok(E.bossGate(s).ready);
 });
 
+test('upgrading raises stats, costs gold, and stops at the cap', () => {
+  const s = fresh();
+  s.hero.gold = 10_000_000;
+  const it = { slot: 'chest', ilvl: 20, rarity: 'rare', atk: 0, def: 10, hp: 40, plus: 0 };
+  s.equipment.chest = it;
+  E.refreshMaxHp(s);
+
+  assert.strictEqual(E.itemStat(it, 'def'), 10, '+0 is exactly what it rolled');
+  const first = E.upgradeItem(s, it);
+  assert.ok(first.ok);
+  assert.strictEqual(it.plus, 1);
+  assert.strictEqual(first.cost, B.upgradeCost(20, 0));
+  assert.strictEqual(s.hero.gold, 10_000_000 - first.cost);
+  assert.strictEqual(it.def, 10, 'the rolled stat is preserved, not overwritten');
+  // A single +1 is deliberately a sub-integer change at 3% — it shows up in the
+  // summed total, not in one slot's rounded display. What must hold is that the
+  // raw contribution moved, so twelve slots of it are not silently discarded.
+  assert.ok(E.itemStatRaw(it, 'def') > 10, 'the raw contribution rose');
+
+  // Cost must escalate, or the sink has no appetite.
+  for (let p = 1; p < B.UPGRADE_MAX; p++) {
+    assert.ok(B.upgradeCost(20, p) > B.upgradeCost(20, p - 1), `+${p + 1} must cost more than +${p}`);
+  }
+
+  while (E.upgradeItem(s, it).ok) { /* to the cap */ }
+  assert.strictEqual(it.plus, B.UPGRADE_MAX);
+  assert.strictEqual(E.upgradeItem(s, it).why, 'maxed');
+  assert.strictEqual(E.itemStat(it, 'def'), Math.round(10 * (1 + B.UPGRADE_STAT_PER_PLUS * B.UPGRADE_MAX)));
+});
+
+test('upgrading refuses rather than going into debt', () => {
+  const s = fresh();
+  const it = { slot: 'chest', ilvl: 40, rarity: 'rare', atk: 0, def: 10, hp: 40, plus: 0 };
+  s.equipment.chest = it;
+  s.hero.gold = B.upgradeCost(40, 0) - 1;
+  const res = E.upgradeItem(s, it);
+  assert.strictEqual(res.ok, false);
+  assert.strictEqual(res.why, 'gold');
+  assert.strictEqual(it.plus, 0, 'nothing changed');
+  assert.strictEqual(s.hero.gold, B.upgradeCost(40, 0) - 1, 'no gold moved');
+});
+
+test('the sink does not leak: sell price ignores upgrades', () => {
+  // If a merchant paid for `plus`, every upgrade would be a 25%-refundable
+  // deposit and gold would never actually leave the economy.
+  const raw = { slot: 'chest', ilvl: 30, rarity: 'rare', atk: 0, def: 10, hp: 40, plus: 0 };
+  const maxed = Object.assign({}, raw, { plus: B.UPGRADE_MAX });
+  assert.strictEqual(E.sellPrice(maxed), E.sellPrice(raw), 'upgrades are worth nothing at resale');
+  // …but they do count toward which item the hero would rather wear.
+  assert.ok(E.itemValue(maxed) > E.itemValue(raw), 'upgrades count toward what you keep');
+});
+
+test('upgraded gear is not displaced by a raw drop of equal roll', () => {
+  // The trap this guards: pour gold into a weapon, find an identical one, and
+  // have auto-equip bench the upgraded copy because it ranks them the same.
+  const s = fresh();
+  const worn = { slot: 'weapon', ilvl: 20, rarity: 'rare', atk: 16, def: 0, hp: 0, plus: 6 };
+  const drop = { slot: 'weapon', ilvl: 20, rarity: 'rare', atk: 16, def: 0, hp: 0, plus: 0 };
+  s.equipment.weapon = worn;
+  s.inventory = [drop];
+  E.autoEquip(s, { displace: true });
+  assert.strictEqual(s.equipment.weapon, worn, 'the invested weapon stayed on');
+  assert.strictEqual(s.inventory[0], drop, 'the raw drop stayed in the bag');
+});
+
+test('items missing `plus` behave as +0 everywhere', () => {
+  // Every save written before upgrades existed has no `plus` field at all, and
+  // there is no migration for it — the read paths default instead.
+  const legacy = { slot: 'chest', ilvl: 12, rarity: 'rare', atk: 0, def: 4, hp: 20 };
+  assert.strictEqual(E.itemStat(legacy, 'def'), 4);
+  assert.strictEqual(B.plusMult(undefined), 1);
+  assert.strictEqual(E.itemValue(legacy), E.sellPrice(legacy) / B.SELL_FRAC);
+  const s = fresh();
+  s.equipment.chest = legacy;
+  E.refreshMaxHp(s);
+  assert.strictEqual(E.heroDef(s), 4, 'a legacy item still contributes its stats');
+});
+
 test('zone content is coherent', () => {
   let prevMax = 0;
   for (const z of C.zones) {
