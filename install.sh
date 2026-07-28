@@ -1,61 +1,65 @@
 #!/usr/bin/env bash
-# idle-claude-rpg installer — idempotent, no sudo.
-# Deliberately NEVER touches ~/.claude/settings.json (the guardrail hooks
-# treat settings edits as an explicit user action). It copies the /hero skill,
-# self-tests the hook, and prints the settings snippet for you to paste.
+# idle-claude-rpg installer — idempotent, no sudo, no dependencies.
+#
+# By default this NEVER touches ~/.claude/settings.json: it copies the /hero
+# skill, self-tests the hook, and prints the settings snippet for you to paste.
+# settings.json decides what runs on every tool call in every session, and a
+# game installer is not entitled to it by default.
+#
+#   ./install.sh                    skill + self-test + print the snippet
+#   ./install.sh --write-settings   ...and merge it in for you, with a backup
+#   ./install.sh --print-settings   just print the snippet
+#   ./install.sh --check            diagnose an install that stopped working
+#   ./install.sh --uninstall        remove the wiring (leaves your save alone)
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-PRINT_ONLY=false
-[[ "${1:-}" == "--print-settings" ]] && PRINT_ONLY=true
+SETTINGS_JS="$REPO/bin/settings.js"
 
-settings_snippet() {
-  cat <<EOF
-Merge the two hook groups into the EXISTING "hooks" object in
-$CLAUDE_DIR/settings.json (your PreToolUse/SessionStart guardrails stay as
-they are — hook groups merge), and add "statusLine" as a new top-level key:
+MODE=install
+FORCE=()
+for arg in "$@"; do
+  case "$arg" in
+    --print-settings) MODE=print ;;
+    --write-settings) MODE=write ;;
+    --check)          MODE=check ;;
+    --uninstall)      MODE=uninstall ;;
+    --force)          FORCE=(--force) ;;
+    -h|--help)        sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "unknown option: $arg (try --help)" >&2; exit 2 ;;
+  esac
+done
 
-  "hooks": {
-    ...your existing PreToolUse / SessionStart entries...,
-    "PostToolUse": [
-      { "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
-        "hooks": [{ "type": "command",
-          "command": "node \"$REPO/hooks/rpg-hook.js\"",
-          "timeout": 5 }] }
-    ],
-    "Stop": [
-      { "hooks": [{ "type": "command",
-          "command": "node \"$REPO/hooks/rpg-hook.js\"",
-          "timeout": 5 }] }
-    ]
-  },
-  "statusLine": {
-    "type": "command",
-    "command": "node \"$REPO/statusline/rpg-statusline.js\"",
-    "refreshInterval": 1,
-    "padding": 0
-  }
-
-Then restart Claude Code and run /hero init.
-EOF
+require_node() {
+  if ! command -v node >/dev/null 2>&1; then
+    echo "error: node not found on PATH" >&2; exit 1
+  fi
+  local major
+  major="$(node -p 'process.versions.node.split(".")[0]')"
+  if (( major < 18 )); then
+    echo "error: node >= 18 required (found $(node -v))" >&2; exit 1
+  fi
 }
 
-if $PRINT_ONLY; then settings_snippet; exit 0; fi
+case "$MODE" in
+  print)     require_node; exec node "$SETTINGS_JS" print ;;
+  check)     require_node; exec node "$SETTINGS_JS" check ;;
+  uninstall)
+    require_node
+    node "$SETTINGS_JS" remove
+    rm -f "$CLAUDE_DIR/skills/hero/SKILL.md"
+    rmdir "$CLAUDE_DIR/skills/hero" 2>/dev/null || true
+    echo "ok: /hero skill removed"
+    exit 0 ;;
+esac
 
-# 1. node >= 18
-if ! command -v node >/dev/null 2>&1; then
-  echo "error: node not found on PATH" >&2; exit 1
-fi
-NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
-if (( NODE_MAJOR < 18 )); then
-  echo "error: node >= 18 required (found $(node -v))" >&2; exit 1
-fi
+require_node
 
-# 2. dirs
+# 1. dirs
 mkdir -p "$HOME/.config/idle-claude-rpg" "$CLAUDE_DIR/skills/hero"
 
-# 3. skill (diff-print when changing an existing install)
+# 2. skill (diff-print when changing an existing install)
 SKILL_DST="$CLAUDE_DIR/skills/hero/SKILL.md"
 if [[ -f "$SKILL_DST" ]] && ! cmp -s "$REPO/skill/SKILL.md" "$SKILL_DST"; then
   echo "updating $SKILL_DST:"
@@ -64,7 +68,7 @@ fi
 cp "$REPO/skill/SKILL.md" "$SKILL_DST"
 echo "ok: /hero skill installed at $SKILL_DST"
 
-# 4. self-test: run the hook against a fixture in a throwaway state dir
+# 3. self-test: run the hook against a fixture in a throwaway state dir
 TMPHOME="$(mktemp -d)"
 trap 'rm -rf "$TMPHOME"' EXIT
 IDLE_RPG_HOME="$TMPHOME" node "$REPO/bin/rpg.js" init --class wizard --name Smoke >/dev/null
@@ -75,4 +79,10 @@ if ! IDLE_RPG_HOME="$TMPHOME" node "$REPO/bin/rpg.js" status | grep -q "Smoke th
 fi
 echo "ok: hook self-test passed"
 echo
-settings_snippet
+
+# 4. wiring
+if [[ "$MODE" == write ]]; then
+  node "$SETTINGS_JS" merge "${FORCE[@]+"${FORCE[@]}"}"
+else
+  node "$SETTINGS_JS" print
+fi

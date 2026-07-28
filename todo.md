@@ -6,6 +6,41 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 
 ---
 
+## v1.8 — 2026-07-28 ✅ — installable by a stranger
+
+- [x] **MIT LICENSE.** The repo was unlicensed, which for anyone who isn't the
+      author means no right to use it — the single hardest blocker to publishing
+- [x] **`./install.sh --write-settings`** merges the hooks and statusLine into
+      `settings.json` for you. Pasting JSON into the right nesting level of a
+      file you may not have is where a first-time install actually fails, and
+      the printed snippet asked every new player to do exactly that
+- [x] Default is still print-only, and deliberately so: `settings.json` decides
+      what runs on every tool call in every session. The merge is opt-in, backs
+      the file up first (timestamped, with a collision suffix — merge and
+      uninstall land in the same second), and is idempotent
+- [x] **It refuses to take a status line you already have.** You only get one,
+      and silently replacing a working one is the only move here that destroys
+      work rather than adding to it. Hooks still go in; `--force` overrides.
+      A half-install that ticks beats an aborted one
+- [x] Everything keys off the two script *basenames*, not exact command strings,
+      so a re-run after moving the clone **repoints** the stale paths instead of
+      appending a second copy. Moving the directory is this design's one real
+      fragility and it fails silently — fail-open means no error anywhere
+- [x] **`--check`** is the doctor: node, skill, both hooks, statusLine, save,
+      queue depth — ordered so the first `FAIL` is the thing to fix. Written
+      against the support question a public release will actually get, which is
+      "I merged the settings and nothing happens"
+- [x] **`--uninstall`** removes only our entries, leaving co-tenant hooks in the
+      same group and a foreign status line alone. Round-trip to the original
+      file is a test. The save is never touched
+- [x] The check's hero readout guessed `state.name`/`state.class` and printed
+      "undefined the ?" against a healthy save — the fields live under
+      `state.hero`. Pinned by a test that inits a real save and reads it back
+- [x] 16 new tests (108 total). The settings tests also stopped inheriting the
+      developer's real `IDLE_RPG_HOME`, which they were reading through
+- [x] README: install/update/troubleshoot/uninstall rewritten, test count
+      corrected 77 → 108, license section added. `HANDOFF.md` is now ignored
+
 ## v1.7 — 2026-07-28 ✅ — the cap stops being a wall
 
 - [x] **Insight (paragon).** `engine.addXp` returned early above level 60, so

@@ -160,19 +160,35 @@ Insight is the one currency you cannot farm back in an afternoon.
 
 ## Install
 
+Node ≥ 18, no npm install, no network calls.
+
 ```sh
 git clone https://github.com/supershenplus/idle-claude-rpg.git
 cd idle-claude-rpg
-./install.sh
+./install.sh --write-settings
 ```
 
-That copies the `/hero` skill and prints the `settings.json` snippet (hooks +
-statusLine) for you to merge **manually** — the installer never edits your
-settings by design. Restart Claude Code, then run `/hero init` and pick a class.
+That copies the `/hero` skill, self-tests the hook, and wires both into
+`~/.claude/settings.json`. Restart Claude Code, then run `/hero init` and pick a
+class.
 
-Keep the clone around: the hook and statusline entries in `settings.json` point
-at absolute paths inside it, so moving or deleting the directory silently stops
-the game (fail-open — your session keeps working, the hero just stops ticking).
+Plain `./install.sh` does everything except the last step, printing the snippet
+for you to paste instead. That's the default because `settings.json` decides
+what runs on every tool call in every session, and a game installer isn't
+entitled to it unless you say so. The merge, when you do ask for it:
+
+- **backs up** `settings.json` first (timestamped, never overwritten),
+- is **idempotent** — re-running won't wire the hook twice,
+- leaves your existing hooks alone, including guardrails on the same event,
+- **refuses to replace a status line you already have.** You only get one, so if
+  yours is doing a job it stays and only the hooks go in (`--force` overrides).
+  You can still play token-free via `! node bin/rpg.js status`.
+
+Keep the clone around: those entries point at absolute paths inside it, so
+moving or deleting the directory stops the game — fail-open, meaning your
+session keeps working and the hero just quietly stops ticking. If you do move
+it, re-run `./install.sh --write-settings`; it repoints the stale paths rather
+than adding a second copy.
 
 ### Updating
 
@@ -181,9 +197,29 @@ git pull && ./install.sh
 ```
 
 `install.sh` is idempotent. Your save lives in `~/.config/idle-claude-rpg/`,
-outside the repo, so pulling never touches your hero. If a release changes the
-hook or statusline paths, re-merge the printed snippet; otherwise the pull is
-all you need.
+outside the repo, so pulling never touches your hero.
+
+### If the HUD stops drawing
+
+```sh
+./install.sh --check
+```
+
+Checks node, the skill, both hooks, the status line, and your save — and names
+the first thing that's actually wrong. It's built around the failure this design
+can't avoid: a stale absolute path fails open, so a moved clone stops the game
+with no error message anywhere.
+
+### Uninstalling
+
+```sh
+./install.sh --uninstall
+```
+
+Removes the `/hero` skill and only our entries from `settings.json` (backed up
+first; co-tenant hooks and a status line that isn't ours are left in place).
+Your hero survives in `~/.config/idle-claude-rpg/` — delete that directory by
+hand if you want it gone too.
 
 Saves migrate forward on load, so an old hero survives a pull. The v1→v2 jump
 (3 slots → 12) re-slots each item by the noun in its name — a Cloak was always a
@@ -238,7 +274,7 @@ literally immune, while an under-geared one ate the entire curve.)
 ## Dev
 
 ```sh
-node --test 'test/*.test.js'      # 77 tests incl. concurrency stress
+node --test 'test/*.test.js'      # 108 tests incl. concurrency stress
 node test/sim.js --days 90        # replay synthetic days through the engine
 node test/sim.js --assert         # balance gates, across all three equip profiles
 ```
@@ -283,3 +319,13 @@ Adding a gear slot means adding it in three places: `content.SLOT_TYPES` (count
 
 State lives in `~/.config/idle-claude-rpg/` (atomic writes, daily backup,
 corrupt-save quarantine). Tuning knobs are all in `lib/balance.js`.
+
+`bin/settings.js` is the wiring: `print` / `merge` / `remove` / `check`, all
+keyed off the two script basenames rather than exact command strings, so a
+re-run after moving the clone repairs the paths instead of duplicating them.
+`test/settings.test.js` covers it as a subprocess against real files — it's the
+only thing here that writes to a file the user didn't create for us.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
