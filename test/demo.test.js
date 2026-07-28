@@ -91,3 +91,22 @@ test('an unknown scene fails loudly instead of rendering nothing', () => {
   const out = demo(['nosuchscene'], { expectFail: true });
   assert.match(out, /unknown scene/);
 });
+
+test('NO_COLOR emits no escape sequences at all', () => {
+  // For piping a scene into a file or an issue report. Deliberately keyed off
+  // the env var and NOT off isTTY: the status line's stdout is a pipe by
+  // construction, since Claude Code captures it, so a TTY check would strip
+  // the colour from the one place that most needs it.
+  const plain = execFileSync('node', [DEMO, 'boss', '--cols', '90'],
+    { encoding: 'utf8', env: { ...process.env, NO_COLOR: '1' } });
+  assert.doesNotMatch(plain, /\x1b\[/, 'escape sequences survive NO_COLOR');
+  assert.match(plain, /BOSS: AURELIA/, 'stripped the content along with the colour');
+
+  const coloured = execFileSync('node', [DEMO, 'boss', '--cols', '90'],
+    { encoding: 'utf8', env: { ...process.env, NO_COLOR: '' } });
+  assert.match(coloured, /\x1b\[/, 'an empty NO_COLOR should not disable colour');
+
+  const R = require('../lib/render');
+  assert.strictEqual(R.visible(coloured), plain,
+    'the two differ by more than colour — NO_COLOR is changing the layout');
+});
