@@ -534,6 +534,85 @@ test('gearLag counts an empty slot as the zero gear it is', () => {
   assert.strictEqual(E.gearLag(s).ratio, 1, 'a hero at the zone\'s level should sit at ratio 1');
 });
 
+// ---------- paragon ----------
+
+test('xp at the cap banks into Insight instead of being discarded', () => {
+  const s = fresh();
+  s.hero.level = B.LEVEL_CAP;
+  E.refreshMaxHp(s);
+
+  E.addXp(s, B.INSIGHT_XP * 3 + 100, T0);
+  const mult = C.classes[s.hero.class].xpMult || 1;
+  const expected = Math.floor(Math.round((B.INSIGHT_XP * 3 + 100) * mult) / B.INSIGHT_XP);
+  assert.strictEqual(s.hero.insight, expected, 'banked the wrong number of points');
+  assert.strictEqual(s.hero.level, B.LEVEL_CAP, 'the cap moved');
+  assert.strictEqual(s.hero.xp, 0, 'the xp bar should stay empty at the cap');
+  assert.ok(s.hero.capXp < B.INSIGHT_XP, 'leftover xp should be under one point, not a whole one');
+  assert.strictEqual(s.counters.insightEarned, s.hero.insight, 'lifetime counter drifted from the purse');
+});
+
+test('the xp that carries you past the cap is not rounded off the end', () => {
+  // Levelling into 60 used to set hero.xp = 0 outright, so whatever overflowed
+  // the last level-up simply vanished. It banks now.
+  const s = fresh();
+  s.hero.level = B.LEVEL_CAP - 1;
+  s.hero.xp = 0;
+  E.refreshMaxHp(s);
+  E.addXp(s, B.xpToNext(B.LEVEL_CAP - 1) + B.INSIGHT_XP * 2, T0);
+  assert.strictEqual(s.hero.level, B.LEVEL_CAP);
+  assert.ok((s.hero.insight || 0) >= 2, `overflow was discarded (insight ${s.hero.insight || 0})`);
+});
+
+test('a pre-paragon save reads as zero everywhere rather than NaN', () => {
+  // Same call as `plus`: no migration, the read paths default. Every save
+  // written before this feature has no insight, capXp or paragon field at all.
+  const s = fresh();
+  delete s.hero.insight; delete s.hero.capXp; delete s.hero.paragon;
+  delete s.counters.insightEarned;
+  assert.strictEqual(E.paragonPoints(s, 'atk'), 0);
+  assert.strictEqual(E.insightMult(s, 'atk'), 1);
+  assert.ok(Number.isFinite(E.heroAtk(s)), 'heroAtk went non-finite on a legacy save');
+  const atk = E.heroAtk(s);
+  s.hero.level = B.LEVEL_CAP; E.refreshMaxHp(s);
+  E.addXp(s, B.INSIGHT_XP, T0);
+  assert.strictEqual(s.hero.insight, 1, 'a legacy save could not bank its first point');
+  assert.strictEqual(s.counters.insightEarned, 1, 'a missing counter should start at zero, not NaN');
+  s.hero.level = 1; E.refreshMaxHp(s);
+  assert.strictEqual(E.heroAtk(s), atk, 'unspent insight changed ATK on its own');
+});
+
+test('insight buys exactly what the board advertises, and no more', () => {
+  const s = fresh();
+  s.hero.insight = 500;
+  const base = E.heroAtk(s);
+
+  // Cost curve: three points per price tier, so the first three cost 1 each.
+  assert.deepStrictEqual([0, 1, 2, 3, 24].map(B.insightCost), [1, 1, 1, 2, 9]);
+
+  const r = E.spendInsight(s, 'atk');
+  assert.ok(r.ok);
+  assert.strictEqual(s.hero.insight, 499, 'charged the wrong amount');
+  assert.ok(Math.abs(E.heroAtk(s) / base - 1.02) < 1e-9, 'one atk point is not +2%');
+
+  // Tracks cap. An unbounded multiplier eventually deletes the difficulty curve.
+  while (E.spendInsight(s, 'atk').ok) { /* pour it all in */ }
+  assert.strictEqual(E.paragonPoints(s, 'atk'), B.INSIGHT_TRACK_MAX);
+  assert.strictEqual(E.spendInsight(s, 'atk').why, 'maxed');
+  assert.ok(Math.abs(E.heroAtk(s) / base - 1.5) < 1e-9, 'a maxed atk track is not +50%');
+
+  assert.strictEqual(E.spendInsight(s, 'nonsense').why, 'track');
+});
+
+test('spending insight you do not have changes nothing', () => {
+  const s = fresh();
+  s.hero.insight = 0;
+  const r = E.spendInsight(s, 'gold');
+  assert.strictEqual(r.ok, false);
+  assert.strictEqual(r.why, 'insight');
+  assert.strictEqual(E.paragonPoints(s, 'gold'), 0, 'a refused purchase still moved the track');
+  assert.strictEqual(s.hero.insight, 0);
+});
+
 test('items missing `plus` behave as +0 everywhere', () => {
   // Every save written before upgrades existed has no `plus` field at all, and
   // there is no migration for it — the read paths default instead.

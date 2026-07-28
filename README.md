@@ -131,6 +131,33 @@ and the same gold buys a whole rare off the shelf. `upgrade <slot> max` shows th
 ATK/DEF/HP its spend would actually buy and says so outright when the gain rounds
 to nothing, so the trap is visible before the gold is gone rather than after.
 
+## Past the cap
+
+Level 60 used to be a wall: `addXp` returned early and every point earned at the
+cap was discarded, so a capped hero had the loot chase and nothing else. XP past
+the cap now banks into **Insight**, spent on three tracks:
+
+| track | per point | max | maxed |
+|---|---|---|---|
+| `atk` | +2% hero ATK | 25 | +50% |
+| `gold` | +3% gold per kill | 25 | +75% |
+| `drop` | +2% drop chance | 25 | +50% |
+
+Points cost 1 Insight each for the first three, rising to 9 for the twenty-fifth.
+The whole board is 351 Insight, which the sim puts at roughly **120 days past the
+cap** against the 45 it took to reach it — you get your first point within hours,
+and you are still choosing tracks months later.
+
+This is deliberately **not** a prestige reset. Level, gear, gold and zone are
+never touched. The game ticks while you are looking at a compiler rather than at
+it, and wiping twelve slots you spent weeks filling — at a moment you weren't
+even watching — is the opposite of this codebase's line that a setback should
+have a way back.
+
+`/hero insight` shows the board; `/hero insight <track>` buys one point;
+`/hero insight <track> max` previews the spend and needs `--confirm`, because
+Insight is the one currency you cannot farm back in an afternoon.
+
 ## Install
 
 ```sh
@@ -167,7 +194,7 @@ legacy gear doesn't permanently outclass every new drop for its slot.
 
 `/hero` (status) · `/hero zone [go <id>]` · `/hero shop [buy <n>]` ·
 `/hero inventory` · `/hero equip <n> [slot] | all | best` ·
-`/hero upgrade [<slot> [max]] [--confirm]` ·
+`/hero upgrade [<slot> [max]] [--confirm]` · `/hero insight [<track> [max]] [--confirm]` ·
 `/hero sell <n> | all | <rarity…> [--confirm]` · `/hero stats`
 
 All of it also works token-free as `! node bin/rpg.js <cmd>`.

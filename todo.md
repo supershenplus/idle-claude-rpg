@@ -6,6 +6,37 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 
 ---
 
+## v1.7 — 2026-07-28 ✅ — the cap stops being a wall
+
+- [x] **Insight (paragon).** `engine.addXp` returned early above level 60, so
+      every point earned at the cap was discarded and a capped hero had the loot
+      chase and nothing else. XP past the cap now banks toward Insight, spent on
+      three tracks: `atk` +2%/pt, `gold` +3%/pt, `drop` +2%/pt, 25 points each
+- [x] Deliberately **not** a prestige reset — level, gear, gold and zone are
+      never touched. This repo's line on setbacks is that they have a way back,
+      and wiping twelve slots you spent weeks filling, while you were looking at
+      a compiler rather than at the game, is the opposite of that
+- [x] Rate is 40% of a cap-level per point (~3/day at the sim's 300 events/day):
+      the first point lands within hours, and all 75 points take ~120 days past
+      the cap against the 45 it took to reach it. A tenth of a cap-level was the
+      first guess and maxed everything in 30 days — a tail no longer than the climb
+- [x] Tracks cap at 25 rather than running forever. An unbounded ATK multiplier
+      eventually deletes the difficulty curve `monsterHitDamage` exists to keep flat
+- [x] **The sim now plays past the cap.** It used to `break` the moment it hit
+      level 60, so the entire paragon curve would have gone untested. Three new
+      gates: xp banks rather than evaporating, 30 days past the cap buys under
+      three quarters of the board, and the board does finish by 150 days
+- [x] Post-cap deaths are 0 with paragon *and* 0 without it (1,124 boss kills
+      either way) — the flat curve at the cap is pre-existing, not something
+      Insight introduced. What Insight measurably changes is throughput: 29,609
+      kills against 24,715 over the same 150 days
+- [x] The statusline read a flat `MAX` forever at the cap; it now shows the
+      Insight bar filling and the count climbing, and is *narrower* than the
+      pre-cap `[bar] 1,234/4,567` it replaces
+- [x] No save migration, same call as `plus`: `insight`, `capXp` and `paragon`
+      are absent on every pre-v1.7 save and every read path defaults them
+- [x] 7 new tests + 3 sim gates
+
 ## v1.6 — 2026-07-28 ✅ — gear you'd actually wear
 
 - [x] **Gear is named for the class that wears it.** Both the shelf and the drop
@@ -164,7 +195,6 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 
 ## Backlog (v1.1+)
 
-- [ ] Prestige / post-cap system (currently: loot chase only)
 - [ ] Cosmetic titles from the shop; trinket special affixes
 - [ ] Shop daily rotation (seeded by date+zone) + "Boss Drum" consumable to arm the boss early
 - [ ] Heisenbug gag: sprite renders in a different spot each frame (it moves when observed)

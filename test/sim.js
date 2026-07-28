@@ -40,6 +40,10 @@ const EQUIP_PROFILES = ['upgrade', 'fill', 'none'];
 
 function run(days, perDay, print, opts) {
   const equip = (opts && opts.equip) || 'upgrade';
+  // Days to keep playing *after* the cap. The sim used to stop dead at level 60,
+  // which was fine while the cap was a wall — but Insight only exists above it,
+  // so leaving this at 0 means the whole paragon curve goes untested.
+  const pastCap = (opts && opts.pastCap) || 0;
   const T0 = 1_700_000_000_000;
   const rand = mulberry32(0xC0FFEE);
   const state = E.newState('wizard', 'Sim', T0);
@@ -92,6 +96,19 @@ function run(days, perDay, print, opts) {
       }
     }
 
+    // …and spends Insight as soon as it can afford anything, cheapest track
+    // first — the same "top up whatever is affordable" instinct as the gold loop
+    // above, and the behaviour the track costs are tuned against.
+    if (equip === 'upgrade') {
+      for (let guard = 0; guard < 500; guard++) {
+        const open = B.INSIGHT_TRACKS
+          .map(t => ({ id: t.id, pts: E.paragonPoints(state, t.id) }))
+          .filter(x => x.pts < B.INSIGHT_TRACK_MAX)
+          .sort((a, b) => B.insightCost(a.pts) - B.insightCost(b.pts));
+        if (!open.length || !E.spendInsight(state, open[0].id).ok) break;
+      }
+    }
+
     // fold in hour-sized chunks (closer to reality than one mega-fold)
     for (let h = 0; h < 8; h++) {
       const chunk = events.filter(ev => ev.t >= dayStart + h * 3600000 && ev.t < dayStart + (h + 1) * 3600000);
@@ -105,7 +122,7 @@ function run(days, perDay, print, opts) {
         `zone ${state.hero.zone.padEnd(8)}  kills ${state.counters.kills}  ` +
         `bosses ${state.counters.bossKills}  gold ${state.hero.gold}  deaths ${state.counters.deaths}`);
     }
-    if (capDay) break;
+    if (capDay !== null && day >= capDay + pastCap) break;
   }
 
   if (print) {
@@ -113,7 +130,11 @@ function run(days, perDay, print, opts) {
       ? `\nreached level ${B.LEVEL_CAP} on day ${capDay} at ${perDay} events/day`
       : `\nended day ${days} at level ${state.hero.level} (${perDay} events/day)`);
   }
-  return { capDay, level: state.hero.level, state, bossKillDays, equip };
+  return {
+    capDay, level: state.hero.level, state, bossKillDays, equip,
+    insight: state.counters.insightEarned || 0,
+    paragon: Object.fromEntries(B.INSIGHT_TRACKS.map(t => [t.id, E.paragonPoints(state, t.id)])),
+  };
 }
 
 function assertBalance() {
@@ -134,6 +155,19 @@ function assertBalance() {
   const week500 = run(7, 500, false);
   check(week500.level < B.LEVEL_CAP,
     `one heavy week ends at Lv${week500.level} (must be < cap)`);
+
+  // Paragon. The cap is no longer a wall, but the tail past it has to outlast the
+  // climb to it or it is just a second, shorter game bolted on the end.
+  const cap30 = run(400, 300, false, { pastCap: 30 });
+  const cap150 = run(400, 300, false, { pastCap: 150 });
+  const pts = r => Object.values(r.paragon).reduce((a, b) => a + b, 0);
+  const allPts = B.INSIGHT_TRACKS.length * B.INSIGHT_TRACK_MAX;
+  check(cap30.insight > 0,
+    `xp past the cap banks instead of evaporating (${cap30.insight} insight in 30 days)`);
+  check(pts(cap30) < allPts * 0.75,
+    `30 days past the cap buys ${pts(cap30)}/${allPts} points (want under ${Math.round(allPts * 0.75)})`);
+  check(pts(cap150) === allPts,
+    `the board does finish eventually — ${pts(cap150)}/${allPts} by 150 days past the cap`);
 
   const gaps = at300.bossKillDays.slice(0, 12).map((d, i, a) => i ? d - a[i - 1] : d);
   const avgGap = gaps.length > 1 ? gaps.slice(1).reduce((x, y) => x + y, 0) / (gaps.length - 1) : 99;
