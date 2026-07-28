@@ -78,6 +78,25 @@ this file stays readable as a list of things to do.
       `/hero status; echo pwned`: a prompt means the matcher splits on `;` and
       the boundary holds; silence means the wildcard spans shell operators.
       Without step one, both outcomes of step two have two explanations
+- [ ] **Settings half of the control is verified as of 2026-07-28 — don't
+      re-derive it.** `~/.claude/settings.json` is `defaultMode: "default"` with
+      empty allow *and* deny; `~/.claude/settings.local.json` has 26 allow
+      entries and not one of them matches `node`; there is no project-level
+      `.claude/settings.json` or `settings.local.json` in this repo. The
+      installed `~/.claude/skills/hero/SKILL.md` carries the expanded absolute
+      path, so `allowed-tools` is the only thing that could be granting the call.
+      That means the *config* is already a valid control, and the session's
+      permission mode is the sole remaining variable
+- [ ] **It cannot be run by Claude, in any session Claude is already in.** The
+      session that closed the carried-debt items ran `git commit`, `node --test`,
+      `cp`, `sed -i` and `git stash` against this repo without a single prompt,
+      none of them allow-listed — so the same wholesale-Bash condition as the
+      first attempt was still in force, and any result gathered from inside it
+      would have measured the mode again. Whoever runs this has to start the
+      session themselves and watch for the prompt with their own eyes: a prompt
+      that never appears is indistinguishable, from in here, from one that was
+      auto-approved. The two commands go in as `! `-prefixed lines or as `/hero`
+      invocations typed by the user
 
 ---
 
