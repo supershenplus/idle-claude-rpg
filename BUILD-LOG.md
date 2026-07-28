@@ -19,6 +19,36 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### The bag stopped being a chore (2026-07-28)
+
+- **Loot is judged at the door, not on overflow.** An inventory cap exists to
+  make the player choose which of two good things to keep — but in an idle game
+  the player isn't there when the bag fills, so no choice ever happened. The
+  engine just resolved it, and resolved it on rarity, which isn't what makes an
+  item good here: ilvl is. A `[legendary] i1` trinket sat protected while an
+  incoming `[common] i13` weapon — a real upgrade — pushed something out. Now
+  `rollLoot` asks `worthKeeping()` before bagging anything: does this fit an
+  empty slot, or beat the **weakest** item worn in its slot? Weakest, not best,
+  because a ring only has to out-rank the worst of three to earn its place.
+  Everything else goes straight to the merchant with a ticker line
+- **The comparison is `itemValue`, the one `equip best` already trusts.** No
+  second opinion about what "better" means — a bagged item and a worn item are
+  ranked by the same function, so the filter and the auto-equipper can never
+  disagree about whether something was worth carrying
+- **Vendoring on the spot is safe because worn gear is static.** Nothing about
+  levelling makes a bagged item catch up to one it already loses to, so a "no"
+  is permanent rather than "not yet". That's the property that makes this a
+  filter and not a gamble
+- **The cap survives as a backstop, and now evicts on value too.** It is close
+  to unreachable from drops alone; shop buys are the realistic way to fill a bag
+  now. `equip best` still displaces into the bag and still never sells — the
+  undo promise in the skill doc is intact — so a long unattended stretch can
+  still leave worn-and-replaced gear sitting there. That's the one remaining
+  path to a full bag, and it holds only gear you actually wore
+- **Five tests**, including the one that matters: over 400 drops, every item
+  left in the bag either still beats something worn or was worn once and got
+  displaced. A drop that is neither slipped past the filter
+
 ### Security review — issue #1 opened and closed (2026-07-28)
 
 - **An adversarial pass over trust boundaries, supply chain and game integrity**,

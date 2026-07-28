@@ -132,3 +132,91 @@ test('a v1 save with two items for one v2 slot keeps the loser in the bag', () =
   assert.strictEqual(s.inventory.length, 1, 'the displaced item vanished');
   assert.strictEqual(s.inventory[0].slot, 'chest', 'displaced item kept its slot');
 });
+
+// ---------- the drop filter ----------
+//
+// The bag cap used to be the only thing standing between a hero and 20 slots of
+// grey junk, and it resolved overflow by rarity while the player was away — so
+// it could eat a common i13 upgrade to keep a legendary i1 trinket. These pin
+// the replacement: judge the drop at the door, on the same `itemValue` ranking
+// `equip best` uses, and vendor what can never be worn.
+
+function wear(s, key, ilvl, rarity) {
+  s.equipment[key] = {
+    id: 'w_' + key, slot: C.keySlot(key), name: 'Worn ' + key,
+    rarity: rarity || 'common', ilvl, atk: 1, def: 1, hp: 1, plus: 0,
+  };
+}
+
+test('a drop that beats nothing worn is vendored, not bagged', () => {
+  const s = E.newState('knight', 'Picky', T0);
+  for (const key of C.EQUIP_KEYS) wear(s, key, 20, 'epic');
+  const gold0 = s.hero.gold;
+
+  const item = E.rollLoot(s, 1, { guaranteed: true, from: 'test' }, mulberry32(7), T0);
+  assert.ok(item, 'guaranteed drop produced nothing');
+  assert.strictEqual(s.inventory.length, 0, 'junk drop reached the bag');
+  assert.ok(s.hero.gold > gold0, 'vendored drop paid nothing');
+  assert.strictEqual(s.counters.vendored, 1, 'vendor counter missed the sale');
+  assert.ok(!s.anim.some(a => a.kind === 'loot'), 'vendored drop played the loot flourish');
+});
+
+test('an empty slot takes anything, however poor', () => {
+  const s = E.newState('knight', 'Bare', T0);
+  for (const key of C.EQUIP_KEYS) wear(s, key, 20, 'epic');
+  s.equipment.ring3 = null;
+
+  const junk = { slot: 'ring', ilvl: 1, rarity: 'common', plus: 0 };
+  assert.ok(E.worthKeeping(s, junk), 'an empty ring slot turned down a ring');
+});
+
+test('a ring only has to beat the weakest of the worn set', () => {
+  const s = E.newState('rogue', 'Ringed', T0);
+  const keys = C.slotKeys('ring');
+  keys.forEach((key, i) => wear(s, key, i === 0 ? 2 : 30, 'common'));
+
+  // Beats the i2 straggler but none of the i30s — still worth carrying, because
+  // it displaces the straggler. Comparing against the *best* worn ring would
+  // vendor it and leave the hero wearing the i2 forever.
+  assert.ok(E.worthKeeping(s, { slot: 'ring', ilvl: 10, rarity: 'common', plus: 0 }),
+    'ring that beats the weakest worn was rejected');
+  assert.ok(!E.worthKeeping(s, { slot: 'ring', ilvl: 1, rarity: 'common', plus: 0 }),
+    'ring that beats nothing was kept');
+});
+
+test('no drop ever reaches the bag as dead weight', () => {
+  const s = E.newState('ranger', 'Tidy', T0);
+  const rand = mulberry32(99);
+  const everWorn = new Set();
+
+  for (let i = 0; i < 400; i++) {
+    E.rollLoot(s, 12, { guaranteed: true, from: 'test' }, rand, T0);
+    for (const ch of E.autoEquip(s, { displace: true })) everWorn.add(ch.item.id);
+  }
+
+  assert.ok(s.counters.vendored > 0, 'the filter never fired in 400 drops');
+
+  // Two lawful ways to be in the bag: you beat something worn (a candidate the
+  // player hasn't equipped yet), or you were worn and got displaced — which
+  // `equip best` promises never to sell, so one `equip <n>` can always undo it.
+  // A drop that is neither slipped past the filter.
+  for (const it of s.inventory) {
+    assert.ok(E.worthKeeping(s, it) || everWorn.has(it.id),
+      `${it.name} (i${it.ilvl}) is dead weight that was never worn`);
+  }
+});
+
+test('the cap backstop evicts on value, not rarity', () => {
+  const s = E.newState('wizard', 'Hoarder', T0);
+  // A legendary i1 is worth less to the hero than a common i40; the old
+  // rarity-ordered eviction protected exactly the wrong one.
+  for (let i = 0; i < B.INVENTORY_CAP - 1; i++) {
+    E.addToInventory(s, { id: 'c' + i, slot: 'weapon', name: 'Common ' + i, rarity: 'common', ilvl: 40, atk: 1, def: 0, hp: 0, plus: 0 });
+  }
+  E.addToInventory(s, { id: 'trash', slot: 'weapon', name: 'Legendary Trinket', rarity: 'legendary', ilvl: 1, atk: 1, def: 0, hp: 0, plus: 0 });
+  E.addToInventory(s, { id: 'new', slot: 'weapon', name: 'Newcomer', rarity: 'common', ilvl: 40, atk: 1, def: 0, hp: 0, plus: 0 });
+
+  assert.strictEqual(s.inventory.length, B.INVENTORY_CAP);
+  assert.ok(!s.inventory.some(i => i.id === 'trash'), 'the legendary i1 survived on rarity alone');
+  assert.ok(s.inventory.some(i => i.id === 'new'), 'the newcomer was dropped');
+});
