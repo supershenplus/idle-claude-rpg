@@ -40,7 +40,7 @@ Hot-path rule: `rpg-hook.js` requires only `paths.js`+`classify.js` to append, l
 
 `~/.config/idle-claude-rpg/`: `state.json` (canonical), `state.bak.json` (daily backup), `events.ndjson` (append-only inbox), `events.processing` (fold-in-progress), `state.lock`.
 
-**state.json** (version field for migrations): `hero {name, class, level, xp, hp, maxHp, gold, zone, unlockedZones}`, `equipment {weapon, armor, trinket}`, `inventory[]` (cap 20), `monster {id, name, level, hp, maxHp, isBoss}`, `counters {kills, bossKills, killsSinceBoss, zoneKills, commits, pushes, testsPassed, testsFailed, linesWritten, deaths, lastTestXpAt}`, `anim[]` (cap 10, serialized timings), `lastEventAt`.
+**state.json** (version field for migrations): `hero {name, class, level, xp, hp, maxHp, gold, zone, unlockedZones}`, `equipment {weapon, offhand, head, chest, back, hands, feet, neck, ring1..ring4}` (v2; v1 saves migrate by item noun), `inventory[]` (cap 20), `monster {id, name, level, hp, maxHp, isBoss}`, `counters {kills, bossKills, killsSinceBoss, zoneKills, commits, pushes, testsPassed, testsFailed, linesWritten, deaths, lastTestXpAt}`, `anim[]` (cap 10, serialized timings), `lastEventAt`.
 
 **Concurrency (races possible — hooks run in parallel):**
 1. Hooks `fs.appendFileSync` one compact event line (<200 bytes) to `events.ndjson` — atomic in practice.
