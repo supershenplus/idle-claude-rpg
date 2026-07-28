@@ -19,6 +19,12 @@ The HUD picks a layout from `$COLUMNS`: 5-line sprites with the monster centred
 at ≥76 cols, one-line sprites at ≥50, and a single status line below that. Force
 one with `RPG_HUD=big|compact|mini`.
 
+See it without installing anything — every scene, drawn by the real renderer:
+
+```sh
+node bin/demo.js            # or: node bin/demo.js boss loot --mode compact
+```
+
 - **Zero token cost** for the passive loop — hooks never write to stdout, the
   statusline is pure UI. Only `/hero …` commands (user-initiated) cost tokens.
 - **Zero dependencies** — plain Node ≥18, no npm install, no network calls.
@@ -274,9 +280,10 @@ literally immune, while an under-geared one ate the entire curve.)
 ## Dev
 
 ```sh
-node --test 'test/*.test.js'      # 108 tests incl. concurrency stress
+node --test 'test/*.test.js'      # 117 tests incl. concurrency stress
 node test/sim.js --days 90        # replay synthetic days through the engine
 node test/sim.js --assert         # balance gates, across all three equip profiles
+node bin/demo.js --list           # HUD scenes, for screenshots and layout work
 ```
 
 (Point it at the glob, not `test/` — the directory also holds `sim.js`, which is
@@ -319,6 +326,14 @@ Adding a gear slot means adding it in three places: `content.SLOT_TYPES` (count
 
 State lives in `~/.config/idle-claude-rpg/` (atomic writes, daily backup,
 corrupt-save quarantine). Tuning knobs are all in `lib/balance.js`.
+
+`bin/demo.js` poses a synthetic save per scene and shells out to the **real**
+statusline rather than drawing its own version — a demo with its own copy of the
+layout keeps looking right long after the thing it stands in for breaks. It is
+also the only coverage of several animation branches: a legendary drop, a boss
+intro and a death are rare by design, so waiting for one is not a test strategy.
+It earns its keep — the unseparated `-21594g` in the death banner was found by
+looking at a screenshot of it.
 
 `bin/settings.js` is the wiring: `print` / `merge` / `remove` / `check`, all
 keyed off the two script basenames rather than exact command strings, so a
