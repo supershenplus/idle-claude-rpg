@@ -56,7 +56,7 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 
 ---
 
-## EOW Findings — 2026-07-28 (W1 review, base 6ad9607)
+## EOW Findings — 2026-07-28 (W1 review, base 6ad9607) ✅ — all closed
 
 Two criticals were fixed during the review, not filed: the shared-tmp save race
 (`lib/paths.js`) and the NaN death spiral (`lib/engine.js`). Both have regression
