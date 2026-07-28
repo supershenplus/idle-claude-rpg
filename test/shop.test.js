@@ -33,6 +33,52 @@ test('the shelf is stable inside a rotation and different across one', () => {
     'the shelf survived a rotation unchanged');
 });
 
+// Class flavour renames the shelf; it must not re-roll it. If the class ever
+// leaks into the seed, a Knight and a Wizard start seeing different ilvls and
+// prices for the same rotation, and the shop quietly becomes class-balanced by
+// accident — which nobody tuned it to be.
+test('class changes the nouns on a shelf and nothing else about it', () => {
+  const ids = Object.keys(C.classes);
+  for (const z of C.zones) {
+    for (let w = 0; w < 12; w++) {
+      const now = T0 + w * SHOP.ROTATION_MS;
+      const base = SHOP.rollStock(z.id, now, ids[0]);
+      for (const cls of ids.slice(1)) {
+        const other = SHOP.rollStock(z.id, now, cls);
+        assert.deepStrictEqual(
+          other.offers.map(({ name, ...rest }) => rest),
+          base.offers.map(({ name, ...rest }) => rest),
+          `${cls} got a different shelf from ${ids[0]} in ${z.id}`);
+      }
+    }
+  }
+
+  // ...and it does actually rename something. Search a day of rotations rather
+  // than one shelf: any single window can roll five slots nobody flavours.
+  const flavoured = new Set();
+  for (let w = 0; w < 6; w++) {
+    const now = T0 + w * SHOP.ROTATION_MS;
+    const wiz = SHOP.rollStock('grove', now, 'wizard').offers;
+    const kni = SHOP.rollStock('grove', now, 'knight').offers;
+    wiz.forEach((o, i) => { if (o.name !== kni[i].name) flavoured.add(o.slot); });
+  }
+  assert.ok(flavoured.size > 0, 'no shelf in a day of rotations named a class-flavoured slot');
+});
+
+// The v1→v2 migration reads an item's slot back off its name, so a noun a class
+// can generate but NOUN_SLOT does not know would produce gear that cannot be
+// placed. Cheap to guarantee, miserable to debug.
+test('every class-flavoured noun round-trips back to its own slot', () => {
+  for (const [id, cls] of Object.entries(C.classes)) {
+    for (const slot of C.SLOT_IDS) {
+      for (const noun of C.nounsFor(slot, id)) {
+        assert.strictEqual(C.slotFromNoun(`Runed Grove ${noun}`), slot,
+          `${id}'s "${noun}" does not resolve back to ${slot}`);
+      }
+    }
+  }
+});
+
 test('every zone rolls its own shelf', () => {
   const seen = new Set();
   for (const z of C.zones) {
@@ -106,7 +152,7 @@ test('refresh caches the shelf and reports rotations and zone changes', () => {
 
   const later = SHOP.refresh(st, T0 + SHOP.ROTATION_MS);
   assert.strictEqual(later.rotated, true, 'a crossed window was not reported');
-  assert.deepStrictEqual(later.stock, SHOP.rollStock('grove', T0 + SHOP.ROTATION_MS));
+  assert.deepStrictEqual(later.stock, SHOP.rollStock('grove', T0 + SHOP.ROTATION_MS, 'rogue'));
 
   // Travelling is not a rotation: you're looking at a different shop, and the
   // buy guard exists to protect a shelf you already read, not to block a move.
