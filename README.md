@@ -69,6 +69,19 @@ good run. It is strictly additive: it never unequips, never displaces, and never
 touches a slot you already filled, so unlike bulk selling there is nothing to
 preview and nothing to undo.
 
+That additivity is also a trap. Run `equip all` once and you read as "geared"
+forever while the zone climbs past you — that's the sim's `fill` profile, and it
+dies 238 times a run against the attentive player's 2. `/hero equip best` is the
+way out: the same ranking, but allowed to **displace** anything the bag beats. It
+fills empty slots too, so it is a superset of `equip all`. No `--confirm` — it
+only moves gear between your body and your bag, and it prints every swap and the
+ATK/DEF/HP the change bought.
+
+`/hero status` nudges you when either applies: what the bag beats if anything
+does, otherwise how far worn ilvl has fallen behind the zone's trash. The first
+is exact rather than a heuristic — it runs the real auto-equip against a
+throwaway copy, so the nudge and the command can never disagree.
+
 ## Shop
 
 The shelf is a roll, not a fixture: five items in distinct slots, rarities from
@@ -153,7 +166,7 @@ legacy gear doesn't permanently outclass every new drop for its slot.
 ## Commands
 
 `/hero` (status) · `/hero zone [go <id>]` · `/hero shop [buy <n>]` ·
-`/hero inventory` · `/hero equip <n> [slot] | all` ·
+`/hero inventory` · `/hero equip <n> [slot] | all | best` ·
 `/hero upgrade [<slot> [max]] [--confirm]` ·
 `/hero sell <n> | all | <rarity…> [--confirm]` · `/hero stats`
 

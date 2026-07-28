@@ -111,6 +111,44 @@ test('equip all reports rather than fails when nothing fits or nothing is empty'
   assert.match(run('equip', 'all'), /Every slot is already filled/);
 });
 
+// `equip all` being strictly additive is the trap: run it once and you read as
+// geared forever while the zone climbs past you. `equip best` is the way out,
+// and the two dead ends above now have to point at it rather than just shrug.
+test('equip best displaces what the bag beats and says what it cost you', () => {
+  seed(st => { st.equipment.weapon = item('weapon', 1); st.inventory = [item('weapon', 9)]; });
+  const out = run('equip', 'best');
+  assert.match(out, /weapon-9|weapon/, 'no report of what got equipped');
+  assert.match(out, /replaced/, 'displacing a worn item was not reported');
+  assert.match(out, /not sold/, 'did not say where the displaced item went');
+
+  const st = S.loadState();
+  assert.strictEqual(st.equipment.weapon.id, 'weapon-9-common', 'the better weapon is not worn');
+  assert.deepStrictEqual(st.inventory.map(i => i.id), ['weapon-1-common'],
+    'the displaced weapon should be in the bag, not gone');
+
+  assert.match(run('equip', 'best'), /Nothing in the bag beats/, 'equip best is not idempotent');
+});
+
+test('the dead ends of equip all point at equip best when it would help', () => {
+  seed(st => { st.equipment.weapon = item('weapon', 1); st.inventory = [item('weapon', 9)]; });
+  assert.match(run('equip', 'all'), /\/hero equip best/, 'nothing fits, but a swap would — unsaid');
+
+  seed(st => {
+    for (const k of C.EQUIP_KEYS) st.equipment[k] = item(C.keySlot(k), 5);
+    st.inventory = [item('ring', 9)];
+  });
+  assert.match(run('equip', 'all'), /bag beats 1 of them/);
+
+  // …and stays quiet when the bag genuinely holds nothing better.
+  seed(st => {
+    for (const k of C.EQUIP_KEYS) st.equipment[k] = item(C.keySlot(k), 9);
+    st.inventory = [item('ring', 1)];
+  });
+  const out = run('equip', 'all');
+  assert.match(out, /nothing in the bag beats/i);
+  assert.doesNotMatch(out, /equip best/, 'nudged toward a command that would do nothing');
+});
+
 test('shop lists a full rotating shelf and buying charges the listed price', () => {
   const st0 = seed();
   const out = run('shop');

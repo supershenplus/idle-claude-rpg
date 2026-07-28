@@ -53,14 +53,25 @@ const itemValue = E.itemValue;
 // a time is the same chore bulk selling already fixed at the other end.
 function equipEmpty(st) {
   const empty = C.EQUIP_KEYS.filter(k => !st.equipment[k]);
-  if (!empty.length) { console.log('Every slot is already filled. /hero equip <n> to swap something out.'); return; }
+  if (!empty.length) {
+    const better = E.previewAutoEquip(st, { displace: true }).length;
+    console.log(better
+      ? `Every slot is already filled, but the bag beats ${better} of them. /hero equip best`
+      : 'Every slot is already filled and nothing in the bag beats what you wear.');
+    return;
+  }
   if (!st.inventory.length) { console.log('Bag is empty — nothing to equip. Monsters drop loot as you code.'); return; }
 
   const filled = E.autoEquip(st, { displace: false });
 
   if (!filled.length) {
+    // The dead end this command is most likely to hit, and the one that taught
+    // the lesson: empty slots the bag can't fill, holding gear that beats what
+    // you already wear. Saying only "nothing fits" is true and useless.
+    const better = E.previewAutoEquip(st, { displace: true }).length;
     console.log(`Nothing in the bag fits your ${empty.length} empty slot${empty.length === 1 ? '' : 's'}`
-      + ` (${empty.join(', ')}).`);
+      + ` (${empty.join(', ')}).`
+      + (better ? ` It does beat ${better} slot${better === 1 ? '' : 's'} you're wearing — /hero equip best` : ''));
     return;
   }
 
@@ -73,6 +84,42 @@ function equipEmpty(st) {
   console.log(`\n  ATK ${Math.round(E.heroAtk(st))}  DEF ${E.heroDef(st)}  HP ${st.hero.hp}/${st.hero.maxHp}`
     + ` · ${left.length ? `still empty: ${left.join(', ')}` : 'all twelve slots filled'}`);
   console.log(`  Bag ${st.inventory.length}/${B.INVENTORY_CAP}.`);
+}
+
+// `equip best`: the same ranking, but allowed to displace. A superset of
+// `equip all` — it fills empty slots too — and the fix for the trap `equip all`
+// sets by being strictly additive: a player who kits out twelve slots once is
+// "geared" forever while the zone climbs past them, which is the balance sim's
+// `fill` profile and it dies ~240 times a run.
+//
+// No preview and no --confirm, unlike bulk selling or `upgrade max`. Those spend
+// gold, which is gone; this only ever moves gear between your body and your bag,
+// so the worst case is one `equip <n>` to put something back. What it does owe
+// you is a full account of the swap, which the report below is.
+function equipBest(st) {
+  if (!st.inventory.length) { console.log('Bag is empty — nothing to equip. Monsters drop loot as you code.'); return; }
+
+  const before = { atk: Math.round(E.heroAtk(st)), def: E.heroDef(st), hp: st.hero.maxHp };
+  const changes = E.autoEquip(st, { displace: true });
+
+  if (!changes.length) {
+    console.log(`Nothing in the bag beats what you already wear. Bag ${st.inventory.length}/${B.INVENTORY_CAP}.`);
+    return;
+  }
+
+  E.tick(st, `re-geared — ${changes.length} slot${changes.length === 1 ? '' : 's'} improved`);
+  S.saveState(st);
+
+  console.log(`\n  Equipped ${changes.length} item${changes.length === 1 ? '' : 's'}:\n`);
+  for (const c of changes) {
+    console.log(`  ${c.key.padEnd(8)} ${itemLine(c.item)}`);
+    if (c.replaced) console.log(`  ${''.padEnd(8)} ${R.c('dim', `↳ replaced ${c.replaced.name} → bag`)}`);
+  }
+  const after = { atk: Math.round(E.heroAtk(st)), def: E.heroDef(st), hp: st.hero.maxHp };
+  const delta = (a, b) => (b === a ? `${b}` : `${b} (${b > a ? '+' : ''}${b - a})`);
+  console.log(`\n  ATK ${delta(before.atk, after.atk)}  DEF ${delta(before.def, after.def)}`
+    + `  HP ${st.hero.hp}/${delta(before.hp, after.hp)}`);
+  console.log(`  Bag ${st.inventory.length}/${B.INVENTORY_CAP} — displaced gear is in it, not sold.`);
 }
 
 const commands = {
@@ -132,6 +179,18 @@ const commands = {
       console.log(`    ${key.padEnd(8)} ${it ? itemLine(it) : R.c('dim', '(empty)')}`);
     }
     console.log(`  Bag: ${st.inventory.length}/${B.INVENTORY_CAP} items — /hero inventory`);
+
+    // One nudge, in priority order, or none. `equip all` is strictly additive by
+    // design, so a player who runs it once reads as "geared" forever while the
+    // zone climbs past them — the balance sim's `fill` profile, which dies ~240
+    // times a run. Nothing in the game said so out loud until here.
+    const better = E.previewAutoEquip(st, { displace: true }).length;
+    const lag = E.gearLag(st);
+    if (better) {
+      console.log(R.c('yellow', `  ↑ ${better} slot${better === 1 ? '' : 's'} in your bag beat${better === 1 ? 's' : ''} what you're wearing — /hero equip best`));
+    } else if (lag.ratio < E.GEAR_LAG_NUDGE) {
+      console.log(R.c('yellow', `  ↑ your gear averages ilvl ${lag.mean.toFixed(1)} against level-${lag.target} trash — /hero shop`));
+    }
   },
 
   zone() {
@@ -211,21 +270,23 @@ const commands = {
     if (!st.inventory.length) { console.log('Bag is empty. Monsters drop loot as you code.'); return; }
     console.log(`\n  Bag (${st.inventory.length}/${B.INVENTORY_CAP}):\n`);
     st.inventory.forEach((it, i) => console.log('  ' + itemLine(it, i)));
-    console.log('\n  /hero equip <n> · /hero equip all · /hero upgrade · /hero sell <n> · /hero sell commons rares · /hero sell all');
+    console.log('\n  /hero equip <n> · /hero equip all · /hero equip best · /hero upgrade · /hero sell <n> · /hero sell commons rares · /hero sell all');
   },
 
   // `equip <n>` fills the first free slot of the item's kind and only displaces
   // something when they're all full — and then the cheapest one, so putting on a
   // fourth ring never quietly bins your best. `equip all` fills every *empty*
-  // slot at once and displaces nothing at all.
+  // slot at once and displaces nothing at all. `equip best` is `equip all` with
+  // the gloves off: it also swaps out anything the bag beats.
   equip() {
     const st = requireSave();
     const word = String(args[0] || '').toLowerCase();
     if (word === 'all' || word === 'empty') return equipEmpty(st);
+    if (word === 'best' || word === 'upgrade') return equipBest(st);
 
     const n = parseInt(args[0], 10);
     const item = st.inventory[n - 1];
-    if (!item) { console.log('Usage: /hero equip <n> [slot] | all  (see /hero inventory)'); process.exit(1); }
+    if (!item) { console.log('Usage: /hero equip <n> [slot] | all | best  (see /hero inventory)'); process.exit(1); }
 
     const keys = C.slotKeys(item.slot);
     if (!keys.length) { console.log(`${item.name} has an unknown slot "${item.slot}".`); process.exit(1); }
