@@ -70,7 +70,8 @@ Missing/ambiguous exit code → treat as success (fail open toward fun). Kill: X
 - `monsterHP(mLvl) = (25+10·mLvl)·±15%`; effective ATK ≈ `8+3.2L` (class base + gear); average event ≈0.75×ATK → **~4.2 events/kill at every level** (constant action cadence).
 - `killXP = 10+5·mLvl` (×8 boss), `killGold = (5+2·mLvl)·rand(0.7–1.3)` (×10 boss).
 - Time to cap: ~104 active days @200 events/day, ~69 @300, ~41 @500 → **~2–4 months**; one heavy week ≈ L16. Tuning knobs: the 100 coefficient and 1.5 exponent.
-- **Boss:** after 15 zone kills + level gate → next spawn is boss (10× HP ≈ one focused hour, 8× XP, guaranteed rare+ loot). Boss kill unlocks next zone.
+- `monsterLevel(zone, killsSinceBoss)` = the zone band walked from `min` to `max−1` as the boss cycle fills, jittered 0–2 down. A zone therefore **escalates toward its boss** and the boss is one step up, not a cliff. Kills drive it, not hero level, so a hero held by the level gate meets tougher trash → more XP → clears the gate; the stall is self-correcting. (Until v1.3 this was `min + rand()·4`, which made `zone.max` dead data — the Grove advertised 1–9 and never spawned above 4.)
+- **Boss:** after 15 zone kills + level gate (`hero ≥ bossLevel−1`) → next spawn is boss (10× HP ≈ one focused hour, 8× XP, guaranteed rare+ loot). Boss kill unlocks next zone. `engine.bossGate()` is the single source of truth for both the spawner and the readout, so the HUD can never report a gate the spawner disagrees with.
 - **Loot:** 18% drop/kill (rogue ×1.5, boss/push 100%). Rarity weights 60/25/10/4/1 (common→legendary), stat mult 1.0/1.4/2.0/3.0/4.5, ilvl = mLvl. Legendaries get per-zone names.
 - **Shop:** price `60·ilvl·rarityMult` (~a day's gold for at-level rare); sell-back 25%.
 

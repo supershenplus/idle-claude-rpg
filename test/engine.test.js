@@ -223,6 +223,78 @@ test('level cap: no xp past 60', () => {
   assert.strictEqual(s.hero.xp, 0);
 });
 
+test('trash fills the zone band and stops one step below the boss', () => {
+  for (const z of C.zones) {
+    for (let k = 0; k <= B.BOSS_KILLS_REQUIRED * 2; k++) {
+      for (const roll of [0, 0.34, 0.67, 0.999]) {
+        const lvl = B.monsterLevel(z, k, roll);
+        assert.ok(lvl >= z.min && lvl <= z.max - 1,
+          `${z.id}: level ${lvl} outside ${z.min}-${z.max - 1} (k=${k}, roll=${roll})`);
+      }
+    }
+    // The bug this replaced: `zone.max` was dead data, so the Grove advertised
+    // 1-9 and never spawned above 4. The top of the band must be reachable.
+    const top = Math.max(...Array.from({ length: 40 }, (_, i) =>
+      B.monsterLevel(z, B.BOSS_KILLS_REQUIRED, (i % 20) / 20)));
+    assert.strictEqual(top, z.max - 1, `${z.id}: band tops out at ${top}, want ${z.max - 1}`);
+  }
+});
+
+test('trash escalates as the boss cycle fills', () => {
+  for (const z of C.zones) {
+    const at = k => B.monsterLevel(z, k, 0.5);
+    assert.strictEqual(at(0), z.min, `${z.id}: a fresh cycle starts at the band floor`);
+    assert.ok(at(B.BOSS_KILLS_REQUIRED / 2) > at(0), `${z.id}: mid-cycle outranks the floor`);
+    assert.ok(at(B.BOSS_KILLS_REQUIRED) > at(B.BOSS_KILLS_REQUIRED / 2),
+      `${z.id}: the vanguard outranks mid-cycle`);
+  }
+});
+
+test('bossGate agrees with what actually spawns', () => {
+  // The readout and the spawner must not drift: the old status line could say
+  // "0 more kills" while the level gate silently held the boss back.
+  const zone = C.zoneById('grove');
+  for (const kills of [0, B.BOSS_KILLS_REQUIRED - 1, B.BOSS_KILLS_REQUIRED, 60]) {
+    for (const level of [1, zone.boss.level - 2, zone.boss.level - 1, zone.boss.level + 5]) {
+      const s = fresh();
+      s.hero.level = level;
+      s.counters.killsSinceBoss = kills;
+      const gate = E.bossGate(s);
+      E.spawnMonster(s, () => 0.5);
+      assert.strictEqual(gate.ready, !!s.monster.isBoss,
+        `kills=${kills} level=${level}: gate said ready=${gate.ready}, spawned boss=${!!s.monster.isBoss}`);
+    }
+  }
+});
+
+test('bossGateText always names the gate that is actually binding', () => {
+  const s = fresh();
+  const zone = C.zoneById(s.hero.zone);
+
+  // The live-save case: kills long since satisfied, level still holding.
+  s.counters.killsSinceBoss = 58;
+  s.hero.level = 5;
+  let txt = E.bossGateText(s);
+  assert.ok(/3 levels away/.test(txt), `want the level gate, got: ${txt}`);
+  assert.ok(!/kill/.test(txt), `must not mention kills when kills are satisfied: ${txt}`);
+
+  // Both gates pending: report both rather than half the truth.
+  s.counters.killsSinceBoss = 10;
+  txt = E.bossGateText(s);
+  assert.ok(/5 kills and 3 levels away/.test(txt), `want both gates, got: ${txt}`);
+
+  // Level satisfied, kills pending.
+  s.hero.level = zone.boss.level - 1;
+  txt = E.bossGateText(s);
+  assert.ok(/5 kills away/.test(txt) && !/level/.test(txt), `want the kill gate, got: ${txt}`);
+
+  // Both satisfied — the next kill summons it, and the spawner agrees.
+  s.counters.killsSinceBoss = B.BOSS_KILLS_REQUIRED;
+  txt = E.bossGateText(s);
+  assert.ok(/next kill/.test(txt), `want the ready line, got: ${txt}`);
+  assert.ok(E.bossGate(s).ready);
+});
+
 test('zone content is coherent', () => {
   let prevMax = 0;
   for (const z of C.zones) {

@@ -141,10 +141,7 @@ const commands = {
         .toString());
     }
     console.log(`\n  Fighting: ${m.isBoss ? '☠ BOSS ' : ''}Lv${m.level} ${m.name}  HP ${m.hp}/${m.maxHp} [${R.bar(m.hp, m.maxHp, 20)}]`);
-    if (!m.isBoss) {
-      const left = Math.max(0, B.BOSS_KILLS_REQUIRED - st.counters.killsSinceBoss);
-      console.log(`  Boss in ${left} more kills (need Lv${zone.boss.level - 1}+): ${zone.boss.name}`);
-    }
+    if (!m.isBoss) console.log(`  ${E.bossGateText(st)}`);
     const worn = C.EQUIP_KEYS.filter(k => st.equipment[k]).length;
     console.log(`\n  Gear (${worn}/${C.EQUIP_KEYS.length} slots):`);
     for (const key of C.EQUIP_KEYS) {
