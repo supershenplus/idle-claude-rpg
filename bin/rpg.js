@@ -91,10 +91,11 @@ const commands = {
       const left = Math.max(0, B.BOSS_KILLS_REQUIRED - st.counters.killsSinceBoss);
       console.log(`  Boss in ${left} more kills (need Lv${zone.boss.level - 1}+): ${zone.boss.name}`);
     }
-    console.log('\n  Gear:');
-    for (const slot of ['weapon', 'armor', 'trinket']) {
-      const it = st.equipment[slot];
-      console.log(`    ${slot.padEnd(8)} ${it ? itemLine(it) : R.c('dim', '(empty)')}`);
+    const worn = C.EQUIP_KEYS.filter(k => st.equipment[k]).length;
+    console.log(`\n  Gear (${worn}/${C.EQUIP_KEYS.length} slots):`);
+    for (const key of C.EQUIP_KEYS) {
+      const it = st.equipment[key];
+      console.log(`    ${key.padEnd(8)} ${it ? itemLine(it) : R.c('dim', '(empty)')}`);
     }
     console.log(`  Bag: ${st.inventory.length}/${B.INVENTORY_CAP} items — /hero inventory`);
   },
@@ -128,13 +129,17 @@ const commands = {
     const zone = C.zoneById(st.hero.zone);
     const ilvl = Math.min(zone.max, zone.min + 2);
     // fixed per-zone offers: one uncommon, one rare, one epic
+    // Each zone stocks a different three slots, walking the slot list as you
+    // travel, so the shop isn't the same weapon/armor/trinket rack everywhere.
+    const shopSlots = [0, 1, 2].map(i =>
+      C.SLOT_TYPES[(C.zoneIndex(zone.id) * 3 + i) % C.SLOT_TYPES.length]);
     const offers = ['uncommon', 'rare', 'epic'].map((rid, i) => {
       const rarity = B.RARITIES.find(r => r.id === rid);
-      const slot = ['weapon', 'armor', 'trinket'][i];
+      const slot = shopSlots[i].id;
       const stats = B.itemStats(slot, ilvl, rarity.mult);
       return {
         slot, rarity: rid, ilvl, ...stats,
-        name: `${C.RARITY_ADJ[rid]} ${zone.flavor} ${C.SLOT_NOUNS[slot][0]}`,
+        name: `${C.RARITY_ADJ[rid]} ${zone.flavor} ${shopSlots[i].nouns[0]}`,
         price: B.shopPrice(ilvl, rarity.mult),
       };
     });
@@ -167,19 +172,40 @@ const commands = {
     console.log('\n  /hero equip <n> · /hero sell <n> · /hero sell commons rares · /hero sell all');
   },
 
+  // `equip <n>` fills the first free slot of the item's kind and only displaces
+  // something when they're all full — and then the cheapest one, so putting on a
+  // fourth ring never quietly bins your best.
   equip() {
     const st = requireSave();
     const n = parseInt(args[0], 10);
     const item = st.inventory[n - 1];
-    if (!item) { console.log('Usage: /hero equip <n> (see /hero inventory)'); process.exit(1); }
+    if (!item) { console.log('Usage: /hero equip <n> [slot] (see /hero inventory)'); process.exit(1); }
+
+    const keys = C.slotKeys(item.slot);
+    if (!keys.length) { console.log(`${item.name} has an unknown slot "${item.slot}".`); process.exit(1); }
+    let target;
+    if (args[1]) {
+      target = args[1].toLowerCase();
+      if (!keys.includes(target)) {
+        console.log(`${item.name} is a ${item.slot} — it goes in ${keys.join(', ')}, not "${args[1]}".`);
+        process.exit(1);
+      }
+    } else {
+      const value = it => B.shopPrice(it.ilvl, (B.RARITIES.find(r => r.id === it.rarity) || { mult: 1 }).mult);
+      target = keys.find(k => !st.equipment[k])
+        || keys.slice(1).reduce((worst, k) =>
+          value(st.equipment[k]) < value(st.equipment[worst]) ? k : worst, keys[0]);
+    }
+
     st.inventory.splice(n - 1, 1);
-    const old = st.equipment[item.slot];
-    st.equipment[item.slot] = item;
+    const old = st.equipment[target];
+    st.equipment[target] = item;
     if (old) st.inventory.push(old);
     E.refreshMaxHp(st);
     E.tick(st, `equipped ${item.name}`);
     S.saveState(st);
-    console.log(`Equipped ${itemLine(item)}${old ? ` (unequipped ${old.name} → bag)` : ''}.`);
+    console.log(`Equipped ${itemLine(item)} in ${target}`
+      + `${old ? ` (unequipped ${old.name} → bag)` : ''}.`);
   },
 
   // Clearing a bag of grey junk one index at a time is the worst part of an
