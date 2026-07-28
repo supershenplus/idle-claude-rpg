@@ -6,6 +6,34 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 
 ---
 
+## v1.4 — 2026-07-28 ✅ — death is punctuation
+
+- [x] **The balance sim never equipped anything.** It folded 83 days of combat
+      with all twelve slots empty, so every figure it asserted — deaths above
+      all, since mitigation keys off def — described a hero who fought
+      Production naked. `E.autoEquip()` is now shared by `/hero equip all` and
+      the sim, which replays three profiles: `upgrade` (attentive), `fill`
+      (fills empty slots only, never upgrades), `none` (the old behaviour)
+- [x] Armour is a **ratio**, not a subtraction. `mLvl − def` was a cliff: a full
+      set rolls def ≈ 1.0–1.2× ilvl and ilvl tracks monster level, so def
+      crossed mLvl and every blow clamped to the floor of 1 — a geared hero was
+      literally immune (1 death per 90 days) while a naked one ate the whole
+      curve (198). Now `raw · mLvl/(mLvl+def)`: def equal to monster level
+      halves the blow, nothing reaches zero, and mitigation holds near 50% at
+      every level, so the difficulty curve is flat by construction
+- [x] **Losing to a boss drives it off** instead of restarting the fight. A boss
+      reset to full HP on death, so a hero who couldn't win one could never do
+      anything else either — the `fill` player died ~2000 times and never
+      reached the cap. Forfeiting the approach costs the 15 kills that earned
+      it, a setback you can work off
+- [x] Bosses counter *more* often than trash now (0.45 / ×1.6, inverting the old
+      rule, whose whole rationale was the boss-reset wall). Trash is attrition
+      regen outpaces; bosses are where death lives. Attentive player: one death
+      per ~12 days. Gold loss stays 5% — see the economy note below
+- [x] 7 new tests (ratio-armour monotonicity, per-zone boss danger bounds, trash
+      attrition ceiling, boss-despawn, trash-death isolation) + 2 new sim gates
+      (death cadence, every profile reaches the cap)
+
 ## v1.3 — 2026-07-28 ✅
 
 - [x] Zones use their whole band. `spawnMonster` rolled `zone.min + rand()*4`
@@ -75,16 +103,21 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 - [ ] Shop daily rotation (seeded by date+zone) + "Boss Drum" consumable to arm the boss early
 - [ ] Heisenbug gag: sprite renders in a different spot each frame (it moves when observed)
 - [ ] Per-session stats view
-- [ ] Death-penalty / retaliation tuning. Now measured rather than guessed:
-      `balance.js` says the retaliation constants were tuned so a kill costs
-      ~5% of max HP, but for a naked hero at each zone's gate level that figure
-      runs **1.1% in the Grove → 10.8% in Production**. It drifts because
-      incoming damage (`mLvl − def`) and attacks-per-kill (monster HP grows
-      10/level vs hero ATK ~2.2/level) both rise with level while max HP rises
-      linearly — so the cost compounds. Gear flattens it in practice, and the
-      v1.3 band fix moved it only ~+0.7pp, so this drift predates v1.3 and was
-      left alone rather than silently re-tuned inside a pacing change.
-      Sim @300/day: 198 deaths to cap (was 145 pre-v1.3), ~2.4/day late game.
-      Decide whether death should be punctuation or pressure, then tune.
+- [ ] **A gold sink — the economy has no floor now.** Death was doing this job
+      by accident and it never really worked: an attentive player finishes with
+      **~1.07M gold** whether the death penalty is 5% or 30%, because they die
+      ~4 times in a run. (This is not a v1.4 regression — a real equipping
+      player was always near-immortal, so they always ended around 1M. The old
+      "135k at cap" figure was an artifact of the naked sim.) Raising the
+      penalty is the wrong lever: it barely touches the attentive player and
+      falls entirely on the struggling one, who needs gold to buy their way out.
+      Wanted instead: something with an unbounded appetite that scales with
+      ilvl. Best candidate is **gear upgrading / reforging** — it deepens the
+      loot chase, gives duplicate drops a purpose, and adds the second real
+      decision the game has. Others: the Boss Drum consumable below, re-rolls.
+- [ ] `equip all` is arguably a trap: it's strictly additive by design, so a
+      player who runs it once is "geared" forever and silently rots — that's the
+      sim's `fill` profile, which dies ~240 times a run. Consider a nudge when
+      worn ilvl falls far behind the zone, or an `equip best` that displaces.
 - [ ] Edit/Write `tool_response` schema is undocumented — revisit if a future
   Claude Code version documents per-tool line counts (we count from `tool_input`)

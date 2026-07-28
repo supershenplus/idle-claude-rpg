@@ -39,12 +39,9 @@ function itemLine(it, i) {
   return `${idx}${R.rarityColored(it.rarity, `[${it.rarity}]`)} ${it.name} (${it.slot} i${it.ilvl}) ${stats}`;
 }
 
-// What an item is worth, and so which of two is "better". Shop price rolls ilvl
-// and rarity together, which is exactly the comparison both the displacement
-// rule and `equip all` want.
-function itemValue(it) {
-  return B.shopPrice(it.ilvl, (B.RARITIES.find(r => r.id === it.rarity) || { mult: 1 }).mult);
-}
+// What an item is worth, and so which of two is "better" — shared with the
+// engine so the CLI, `equip all` and the balance sim all rank items alike.
+const itemValue = E.itemValue;
 
 // `equip all`: fill every empty slot with the best thing in the bag that fits.
 // Strictly additive — it never unequips, never displaces, and never touches a
@@ -56,21 +53,7 @@ function equipEmpty(st) {
   if (!empty.length) { console.log('Every slot is already filled. /hero equip <n> to swap something out.'); return; }
   if (!st.inventory.length) { console.log('Bag is empty — nothing to equip. Monsters drop loot as you code.'); return; }
 
-  // Best-first within a slot type, and rings are interchangeable, so taking the
-  // best remaining candidate for each key in turn is optimal.
-  const taken = new Set();
-  const filled = [];
-  for (const key of empty) {
-    const slot = C.keySlot(key);
-    let bestIdx = -1;
-    st.inventory.forEach((it, i) => {
-      if (taken.has(i) || it.slot !== slot) return;
-      if (bestIdx < 0 || itemValue(it) > itemValue(st.inventory[bestIdx])) bestIdx = i;
-    });
-    if (bestIdx < 0) continue;
-    taken.add(bestIdx);
-    filled.push({ key, item: st.inventory[bestIdx] });
-  }
+  const filled = E.autoEquip(st, { displace: false });
 
   if (!filled.length) {
     console.log(`Nothing in the bag fits your ${empty.length} empty slot${empty.length === 1 ? '' : 's'}`
@@ -78,9 +61,6 @@ function equipEmpty(st) {
     return;
   }
 
-  st.inventory = st.inventory.filter((_, i) => !taken.has(i));
-  for (const f of filled) st.equipment[f.key] = f.item;
-  E.refreshMaxHp(st);
   E.tick(st, `kitted out — ${filled.length} slot${filled.length === 1 ? '' : 's'} filled`);
   S.saveState(st);
 

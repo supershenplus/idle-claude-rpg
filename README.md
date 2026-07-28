@@ -151,25 +151,57 @@ All of it also works token-free as `! node bin/rpg.js <cmd>`.
 
 Monsters fight back: every attack you land has a ~30% chance of a counter-swing
 (shown as `↩-7` flying back at you), so damage no longer depends on you fumbling
-a command. Bosses counter *less often* but hit far harder — a boss has 10× HP, so
-its fight runs ~10× longer, and per-swing parity with trash would make bosses
-unkillable rather than merely dangerous.
+a command.
+
+**Death is punctuation, and it lives at bosses.** Trash costs a properly equipped
+hero well under 3% of max HP per kill against 1%/min passive regen, so grinding
+keeps your bar full and only an under-geared hero feels it — which is the game
+telling you to go equip something. Bosses are the real threat: they counter *more*
+often and far harder, and a boss fight is expected to cost most of a health bar.
+
+Lose one and the boss drives you off rather than restarting the fight — you keep
+your level and loot but forfeit the 15 kills that earned the attempt. That matters
+more than it sounds: a boss used to reset to full HP when you died, so a boss you
+couldn't beat was a boss you could never get *past*, and the zone quietly became a
+wall. The grind back is where the levels and gear that win the rematch come from.
+
+Armour is a ratio, not a subtraction. Defence equal to a monster's level halves
+its blow, twice its level cuts it to a third, and nothing ever reduces damage to
+zero. Because a full set's defence tracks monster level, mitigation lands near 50%
+at every level — the difficulty curve is flat by construction. (It used to be
+`monsterLevel − defence`, which was a cliff: a kitted hero crossed it and became
+literally immune, while an under-geared one ate the entire curve.)
 
 ## Dev
 
 ```sh
-node --test 'test/*.test.js'      # 64 tests incl. concurrency stress
+node --test 'test/*.test.js'      # 71 tests incl. concurrency stress
 node test/sim.js --days 90        # replay synthetic days through the engine
-node test/sim.js --assert         # balance gates (time-to-cap, boss cadence)
+node test/sim.js --assert         # balance gates, across all three equip profiles
 ```
 
 (Point it at the glob, not `test/` — the directory also holds `sim.js`, which is
 a simulation script rather than a test file.)
 
-`--assert` is the guard that matters when touching combat: the sim runs a *naked*
-hero (it never equips loot), so it is a worst case, and any change to incoming
-damage shows up there as time-to-cap and boss cadence long before it shows up in
-a real save.
+`--assert` is the guard that matters when touching combat. It replays synthetic
+days through the real engine as three different players, because balance that
+only holds for one of them isn't balance:
+
+| profile | behaviour |
+|---|---|
+| `upgrade` | equips anything that beats what's worn — the attentive player, and who the pacing is written for |
+| `fill` | only fills empty slots, never upgrades (`/hero equip all`, rarely) |
+| `none` | never opens the inventory at all — the floor |
+
+Every profile has to reach the cap. That gate exists because the `fill` player
+once died ~2000 times and *never* did, which is how the boss-reset wall above got
+found. Note the spread between profiles is large and deliberate: managing gear is
+the one real decision this game has, so it's allowed to matter a lot.
+
+Until 2026-07-28 the sim never equipped anything at all, so every number it
+asserted — deaths above all, since mitigation keys off defence — described a hero
+who fought Production naked. If you change incoming damage, re-read those gates
+before trusting them.
 
 One trap if you touch the HUD: Claude Code renders a status line as
 `stdout.trim().split('\n').flatMap(l => l.trim() || []).join('\n')`, so every
