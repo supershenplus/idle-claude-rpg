@@ -294,31 +294,49 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 
 ## Backlog (v1.1+)
 
-- [ ] **Redraw the rogue's big art** — it's the one class whose silhouette
-      doesn't resolve into anything. Every other class has a weapon with a
-      through-line you can trace: the wizard's staff is a continuous `┃` down
-      rows 1-3, the ranger's bowstring holds one column across all five (pinned
-      by a test), the knight's `▬` runs into the sword. The rogue has a `╲` on
-      row 3 and a `▼` on row 4 that touch nothing and read as debris:
-      ```
-      0|  ○   ·|          the head is a bare ○ — wizard and ranger both
-      1| ▟███▙|           frame theirs (▐◉▌, ▐●▌), so this reads as a bubble
-      2|░▒█▪▙▄▄|          ▄▄ trails off right into nothing
-      3|░▒███▓ ╲|         ╲ floats, unattached
-      4| ▜▛ ▜▙   ▼|       ▼ is three cells clear of the body
-      ```
-      Its one-line sprite is `(¬‿¬)⌐╦╦═─` (a crossbow) and its projectile is
-      `╫` on a `─` trail, so the big art should be aiming something horizontal
-      to the right; right now nothing points anywhere. Widths also ramp
-      7,6,7,8,10 straight down, and since each row is centred in its own block
-      that makes the figure lean — see the fixed-point note in the README before
-      nudging spaces by eye
+- [x] **Redraw the rogue's big art** — the `╲` on row 3 and `▼` on row 4 touched
+      nothing and read as debris, the head was a bare `○`, and widths ramping
+      7,6,7,8,10 leaned the figure. Redrawn hooded with the body on one axis and
+      the dagger held high on the guard side: fist `▙`, crossguard `╪`, blade
+      `╱ ╱` climbing one cell per row. Knight got the same treatment (sword wound
+      back over the left shoulder, shield forward) and the ranger picked up a
+      plumed cap and a quiver arrow. Two new tests in `statusline.test.js` pin
+      both blades by slope, alongside the ranger's bow. The columns were solved
+      rather than eyeballed — see the fixed-point note in the README
 - [ ] Two smaller sprite nits, both cosmetic and both long-deferred: `harpy` has
       a stray `▚` floating off the right wing, and `leech` is 8 cells wide where
       the rest of the set is 11-13, so it reads undersized next to its zone
 - [ ] One-line sprites in `lib/content.js` are still the original kaomoji — only
       the 5-row big art was redrawn in v1.2, so compact and mini HUD modes never
       got the pass
+- [ ] **Why does the Grove shop stock gear that isn't worth buying?** A real
+      shelf, rolled live at level 8 with 2,494g in hand and the boss at full HP —
+      of five offers, *two* were non-purchases and one was marginal:
+      ```
+      1. [rare] Runed Grove Wand (weapon i7) ATK+11 — 840g   ← the exact item worn
+      2. [uncommon] Fine Grove Helm (head i8) DEF+1 HP+6 — 672g
+      3. [rare] Runed Grove Focus (offhand i8) ATK+2 DEF+2 HP+5 — 960g
+      4. [rare] Runed Grove Mantle (back i4) DEF+1 HP+4 — 480g   ← +1 def changes
+      5. [rare] Runed Grove Treads (feet i1) HP+1 — 90g SALE     nothing at Lv9
+      ```
+      `rollStock` rolls ilvl uniformly over the *zone* span (grove 1-9) and never
+      looks at what the hero is wearing, so slot 1 can be a byte-identical copy of
+      the equipped weapon at full price, and slot 5 can be an i1 strictly dominated
+      by worn i7 — with the SALE tag drawing the eye straight to it. Compounding it:
+      a `+` adds 2% of what the item *rolled*, which on Grove numbers is +0.22 ATK,
+      so upgrades are also dead at this tier and there is nothing else to spend on.
+      The question isn't the balance of any one line — it's what the shelf is *for*
+      before Cobalt Caves. Options, roughly in order of how much they change:
+      (a) roll against worn ilvl so an offer is at least a sidegrade — cheap, but
+      makes the shelf a vending machine and kills the "hunt the one good slot" read;
+      (b) leave the rolls honest but mark dominated offers in the CLI (`worse than
+      worn`, and suppress SALE on them), so a bad shelf is legible rather than a
+      trap for someone who can't diff twelve slots by eye; (c) accept a dead shelf
+      as the point — you *should* sometimes bank the gold — and make waiting cost
+      nothing, which argues for the daily-rotation entry below. (b) is the small
+      honest fix; (a) is the design decision. Note this is only sharp in the Grove:
+      the ratio armour model means +1 def matters less at low mLvl, and the whole
+      thing is self-correcting once ilvl spreads widen in later zones
 - [ ] Cosmetic titles from the shop; trinket special affixes
 - [ ] Shop daily rotation (seeded by date+zone) + "Boss Drum" consumable to arm the boss early
 - [ ] Heisenbug gag: sprite renders in a different spot each frame (it moves when observed)

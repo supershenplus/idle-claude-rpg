@@ -72,6 +72,36 @@ test('ranger bowstring holds one column across all five rows', () => {
   assert.strictEqual(new Set(cols).size, 1, `string wanders across columns: ${cols}`);
 });
 
+// The rogue's old art failed exactly here: a ╲ on row 3 and a ▼ on row 4 that
+// touched nothing and read as debris. A weapon is only legible if you can trace
+// it back to the fist, one cell per row, so both blades get pinned by their
+// slope rather than by their glyphs.
+function diagonal(art, steps) {
+  return steps.map(([row, ch]) => cellOf(art, row, ch));
+}
+
+test('rogue dagger climbs unbroken from the fist to the tip', () => {
+  const art = sprites.heroesBig.rogue;
+  const fist = cellOf(art, 2, '▙');
+  const blade = diagonal(art, [[2, '╪'], [1, '╱'], [0, '╱']]);
+  assert.ok(blade.every(c => c >= 0), `blade is missing a row: ${blade}`);
+  assert.strictEqual(blade[0], fist + 1, 'crossguard is not in the rogue\'s hand');
+  assert.deepStrictEqual(blade, [blade[0], blade[0] + 1, blade[0] + 2],
+    `blade jumps columns instead of climbing one per row: ${blade}`);
+});
+
+test('knight sword winds back over the shoulder unbroken', () => {
+  const art = sprites.heroesBig.knight;
+  const body = cellOf(art, 2, '░');
+  const blade = diagonal(art, [[2, '╪'], [1, '╱'], [0, '╱']]);
+  assert.ok(blade.every(c => c >= 0), `blade is missing a row: ${blade}`);
+  assert.strictEqual(blade[0], body - 1, 'crossguard is not against the knight\'s body');
+  assert.deepStrictEqual(blade, [blade[0], blade[0] - 1, blade[0] - 2],
+    `blade jumps columns instead of sweeping one per row: ${blade}`);
+  // Sword behind, shield in front: the two must not swap sides.
+  assert.ok(blade[0] < cellOf(art, 2, '◆'), 'sword is on the shield side');
+});
+
 test('ranger bow limbs bulge symmetrically toward the target', () => {
   const art = sprites.heroesBig.ranger;
   const string = cellOf(art, 0, '│');
