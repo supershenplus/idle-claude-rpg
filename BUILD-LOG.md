@@ -68,6 +68,37 @@ is in `docs/PLAN.md`.
   `todo.md` with the retest design
 - 14 new tests (**191 total**)
 
+### Found in play — the counter-hit drew before the blow (2026-07-28)
+
+- **Reported from the statusline: the monster's blow appeared to drive the
+  ranger's shot** — bow draw and all — when nothing the hero did should have
+  been firing. Two candidate causes were logged with it; the honest answer was
+  neither of the guesses and cheaper than both
+- **The engine was never wrong.** `retaliate` is reachable only from
+  `dealDamage`, which enqueues the hero's `hit` immediately before it — so a
+  counter with no attack behind it is not a state the engine can reach, and the
+  folding of a counter into the hero's anim (`engine.js:543`) is sound. What was
+  wrong was drawing order: in `gapMarks`, `dmg` waited on
+  `frame >= sprites.hitFrame(cls)` and `counter` waited on nothing. So on any
+  answered blow the monster's `↩-N` was on screen from frame 0 — while the
+  ranger still stood at its mark with a nocked bow, three frames before its own
+  `✦-N`. The reply preceded the blow, and the eye supplied the causality
+- **Both numbers now wait for impact.** One shared `landed` gate. That the fix is
+  a two-line change is the point: the symptom read as an animation-system bug and
+  drew a plausible pair of theories about counters lacking frames of their own,
+  when the ordering was the whole of it. Worth reading twice before rebuilding
+  anything the next time a scene lies about cause
+- Guarded by *the counter-hit waits for the blow it is answering* in
+  `test/statusline.test.js`, which asserts no `↩-` on every frame before
+  `hitFrame` and its arrival on that frame — verified to fail at frame 0 against
+  the pre-fix renderer. Full suite 192 pass / 0 fail
+- **Left open, and separate:** `test_fail` and `bash_fail` call `hurtHero`
+  directly with no `enqueue` at all, so those monster blows cost HP and draw
+  nothing whatsoever. That is the "mob hit with no hero attack behind it" case
+  the report guessed at — it exists, it just isn't what was seen. Carried to
+  `todo.md` rather than folded in here, because giving it a frame means deciding
+  what a monster attack animation *is*
+
 ### Found in play — travel, and the kill scene (2026-07-28)
 
 - **Travel is automatic now.** Beating a zone's boss unlocked the next zone

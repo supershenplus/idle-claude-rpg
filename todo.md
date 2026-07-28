@@ -13,21 +13,36 @@ this file stays readable as a list of things to do.
 
 ## Found in play — 2026-07-28
 
-- [ ] **The monster's blow plays the hero's attack animation.** Reported from the
-      statusline: the mob hitting back drives the *ranger's* shot — bow draw and
-      all — when nothing the hero did should be firing. Logged unworked; the
-      report is the finding, the cause below is a starting point and not verified
-- [ ] Two sites make it plausible. A counter never gets an animation of its own:
-      `retaliate` folds its damage into whatever `hit` is already on the queue
-      (`lib/engine.js:543-546`), and the renderer decides the hero is attacking
-      from `anim.type === 'hit'` alone (`statusline/rpg-statusline.js:148`). So a
-      counter is drawn *through* the hero's attack frame, because that is the only
-      frame it has. Worth checking whether the symptom is a counter riding a real
-      hero attack, or a mob hit landing with no hero attack behind it at all —
-      those want different fixes, and only the second is straightforwardly a bug
-- [ ] Whatever the cause, the class that shows it worst is the one with a
-      projectile: `test/sprites.test.js` already pins the ranger's shot across
-      three widths, so the regression test has somewhere obvious to live
+- [ ] **Some monster blows are drawn as nothing at all.** Fell out of chasing the
+      counter-hit ordering bug (fixed, see `BUILD-LOG.md`) and is the *other* half
+      of that report — the half that turned out to be real. `test_fail` and
+      `bash_fail` call `hurtHero` directly (`lib/engine.js:665,668`) without ever
+      calling `enqueue`, so a failing test or a failing command takes HP off the
+      hero and puts nothing on screen. Only the counter path
+      (`retaliate` → folded onto the hero's `hit`) has any frame at all, and it
+      borrows the hero's. So the game has no monster attack animation in any form
+- [ ] Which makes this the same open question as the flinch item below, from the
+      other side: that one asks what it looks like when a monster is *hit*, this
+      one asks what it looks like when a monster *hits*. They share the impact
+      frame, the reserved-room problem against the right edge, and the corpse
+      path they both have to not fight — so they want designing together even if
+      they land separately. Cheapest sketch that covers all 28: a shove *left*
+      (mirror of the hero's recoil) plus a mark travelling right-to-left in the
+      gap, which is `gapMarks` run backwards and needs no new art
+- [ ] **Bosses should get hand-scripted attacks of their own.** The generic
+      treatment above is what makes the other 22 monsters legible; the six bosses
+      are where per-monster art actually pays for itself, the same way
+      `sprites.attacks.ranger` pays off for the class you play. A wind-up pose, a
+      signature projectile or reach, and a recoil — so Rootfang's swing doesn't
+      read like a leech's. Prerequisites, in order: the generic monster attack
+      above has to exist first (the bosses are the exception to a rule that isn't
+      written yet); `attacks`/`attackFrame`/`MAX_RECOIL` are keyed by class id and
+      would need to take a monster id too, or a second table beside them; and
+      `MAX_RECOIL` reserves room on the *hero's* side only, so the right-edge
+      equivalent is a new constraint the layout has never had. Worth deciding
+      early whether a boss script is a full `frames` array like the ranger's or
+      just a pose swap on the impact frame — six hand-drawn sequences is a real
+      art budget, and the ranger's took a solver to align
 
 ---
 
@@ -105,7 +120,8 @@ this file stays readable as a list of things to do.
       *right* edge, where the binding constraint is `R.fit` truncating the line
       rather than column 0; and it must not fight the corpse path — `kill` and
       `bossdown` already swap in `DEAD_MONSTER_BIG` and pin `anim.data.mon`, so
-      the flinch has to end where the death begins
+      the flinch has to end where the death begins. Pairs with the monster-attack
+      items up top: same impact frame, same right-edge reserve, same corpse path
 - [ ] **Why does the Grove shop stock gear that isn't worth buying?** A real
       shelf, rolled live at level 8 with 2,494g in hand and the boss at full HP —
       of five offers, *two* were non-purchases and one was marginal:

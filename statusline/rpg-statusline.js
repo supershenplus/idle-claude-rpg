@@ -185,11 +185,20 @@ function main(stdin) {
       const exact = String(Math.max(0, Math.round(n || 0)));
       return exact.length <= room ? exact : R.fmt(Math.max(0, n || 0));
     };
-    const dmg = frame >= sprites.hitFrame(h.class)
+    const landed = frame >= sprites.hitFrame(h.class);
+    const dmg = landed
       ? R.c(d.crit ? 'brightRed' : 'brightYellow',
         R.fit(`✦-${num(d.dmg, cells - (d.crit ? 3 : 2))}${d.crit ? '!' : ''}`, cells))
       : '';
-    const counter = d.counter
+    // The counter waits for the same frame the damage does. It used to draw from
+    // frame 0 — so on a blow that was answered, the monster's `↩-N` was on screen
+    // a full beat before the arrow left the bow, and the scene read as the mob
+    // striking first with the ranger's shot answering it. Nothing about the
+    // engine was wrong: `retaliate` only ever runs off the back of a hero blow,
+    // so a counter with no attack behind it isn't a state it can reach. The
+    // false causality was drawing order alone. Both numbers belong to the moment
+    // of impact, so both wait for it.
+    const counter = landed && d.counter
       ? R.c('brightRed', R.fit(`↩-${num(d.counter, cells - 2)}`, cells))
       : '';
     return { flight, flightCol, dmg, counter };

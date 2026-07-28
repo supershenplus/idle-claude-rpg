@@ -214,11 +214,11 @@ function columnOf(out, needle) {
   return R.width(line.slice(0, line.indexOf(needle)));
 }
 
-function atFrame(cols, frame) {
+function atFrame(cols, frame, data) {
   return renderAnim(cols, (st, now) => {
     st.monster = { ...BOSS };
     st.anim = [{ type: 'hit', at: now - frame * sprites.FRAME_MS, dur: 1500,
-      data: { dmg: 38, crit: false, counter: 0 } }];
+      data: { dmg: 38, crit: false, counter: 0, ...data } }];
   }, 'big');
 }
 
@@ -254,6 +254,23 @@ test('the damage number waits for the arrow to land', () => {
   assert.doesNotMatch(atFrame(100, landed - 1), /✦-/,
     'the damage is counted while the arrow is still in the air');
   assert.match(atFrame(100, landed), /✦-38/, 'the arrow landed without a damage number');
+});
+
+// Reported from the statusline: the monster's blow appeared to *drive* the
+// ranger's shot — bow draw and all — when nothing the hero did should be firing.
+// The engine never had a counter without an attack behind it (`retaliate` runs
+// only off the back of `dealDamage`); the counter mark was simply ungated, so it
+// drew from frame 0 while the hero was still standing at its mark with a nocked
+// bow. Two frames of a six-frame anim showed the reply before the blow, and a
+// HUD redrawn about once a second lands on them often enough to read as cause.
+test('the counter-hit waits for the blow it is answering', () => {
+  const landed = sprites.hitFrame('ranger');
+  for (let f = 0; f < landed; f++) {
+    assert.doesNotMatch(atFrame(100, f, { counter: 7 }), /↩-/,
+      `the monster answers on frame ${f}, before the hero's blow has landed`);
+  }
+  assert.match(atFrame(100, landed, { counter: 7 }), /↩-7/,
+    'the counter-hit never appears at all');
 });
 
 test('a coalesced hit cannot shear the monster sprite', () => {
