@@ -470,6 +470,20 @@ never runs under `node --test`.
 
 ## Backlog (v1.1+)
 
+- [ ] **Find out what `Bash(node {{REPO}}/bin/rpg.js *)` actually permits.** The
+      one item from the security issue (#1, closed) that needs an answer rather
+      than a patch, and the public close comment promises it is tracked. The
+      skill frontmatter pre-approves that pattern, and a trailing `*` is a prefix
+      match against a string that ends up at a shell — so the question is whether
+      Claude Code splits on `;`, `&&` and `|` before comparing. If it does not,
+      `node …/rpg.js status; <anything>` runs pre-approved
+- [ ] This is a test, not a fix: run the thing and see. Only if it clears does
+      the wildcard need tightening — to explicit subcommands, or by moving arg
+      handling somewhere the permission can bound. Note the closed issue framed
+      this as "a malicious fork could edit SKILL.md", which is the wrong risk:
+      a fork you installed already runs whatever it likes. The boundary worth
+      knowing is what the *unmodified* skill hands out
+
 - [x] **Redraw the rogue's big art** — the `╲` on row 3 and `▼` on row 4 touched
       nothing and read as debris, the head was a bare `○`, and widths ramping
       7,6,7,8,10 leaned the figure. Redrawn hooded with the body on one axis and
