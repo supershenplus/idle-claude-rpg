@@ -635,3 +635,27 @@ test('zone content is coherent', () => {
     prevMax = z.max;
   }
 });
+
+test('a corrupt gear stat cannot NaN the hero into a permanent death spiral', () => {
+  // A hand-edited or half-migrated save can carry a non-numeric stat. That used
+  // to multiply to NaN, poison maxHp, and pin hp at NaN — and because NaN > 0 is
+  // false, every later hit re-ran the death branch, draining gold with no way
+  // back short of editing the save by hand.
+  const s = E.newState('knight', 'Corrupt', T0);
+  s.equipment.weapon = { name: 'Bad', slot: 'weapon', atk: 'notanumber', def: 0, hp: 0, plus: 'x' };
+  E.refreshMaxHp(s);
+  assert.ok(Number.isFinite(s.hero.maxHp) && s.hero.maxHp > 0, `maxHp ${s.hero.maxHp}`);
+  assert.ok(Number.isFinite(s.hero.hp) && s.hero.hp > 0, `hp ${s.hero.hp}`);
+  assert.ok(Number.isFinite(E.heroAtk(s)), 'atk stays finite');
+  assert.ok(Number.isFinite(E.heroDef(s)), 'def stays finite');
+
+  // and a corrupt paragon track must not NaN damage either
+  s.hero.paragon = { atk: 'lots' };
+  assert.ok(Number.isFinite(E.heroAtk(s)), 'atk finite with corrupt paragon');
+
+  const deathsBefore = Number(s.hero.deaths) || 0;
+  for (let i = 0; i < 5; i++) E.hurtHero(s, 1, T0 + i * 1000);
+  const died = (Number(s.hero.deaths) || 0) - deathsBefore;
+  assert.ok(died <= 1, `death spiral: ${died} deaths from 5 chip hits`);
+  assert.ok(Number.isFinite(s.hero.hp) && s.hero.hp > 0, `hp survived chip damage: ${s.hero.hp}`);
+});
