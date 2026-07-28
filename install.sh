@@ -59,14 +59,9 @@ require_node
 # 1. dirs
 mkdir -p "$HOME/.config/idle-claude-rpg" "$CLAUDE_DIR/skills/hero"
 
-# 2. skill (diff-print when changing an existing install)
-SKILL_DST="$CLAUDE_DIR/skills/hero/SKILL.md"
-if [[ -f "$SKILL_DST" ]] && ! cmp -s "$REPO/skill/SKILL.md" "$SKILL_DST"; then
-  echo "updating $SKILL_DST:"
-  diff -u "$SKILL_DST" "$REPO/skill/SKILL.md" || true
-fi
-cp "$REPO/skill/SKILL.md" "$SKILL_DST"
-echo "ok: /hero skill installed at $SKILL_DST"
+# 2. skill — rendered, not copied: it names this clone's absolute path twice,
+# once in `allowed-tools`, which is a permission grant and cannot be relative.
+node "$SETTINGS_JS" skill
 
 # 3. self-test: run the hook against a fixture in a throwaway state dir
 TMPHOME="$(mktemp -d)"

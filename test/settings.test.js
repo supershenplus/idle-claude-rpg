@@ -204,11 +204,28 @@ test('check reports a missing hook rather than claiming everything is fine', () 
 
 test('check passes on a freshly merged install', () => {
   const { dir } = sandbox({ hooks: { PreToolUse: [GUARDRAIL] } });
-  fs.mkdirSync(path.join(dir, 'skills', 'hero'), { recursive: true });
-  fs.copyFileSync(path.join(REPO, 'skill', 'SKILL.md'), path.join(dir, 'skills', 'hero', 'SKILL.md'));
+  run(dir, ['skill']);        // rendered, not copied — the file on disk is a template
   run(dir, ['merge']);
   const out = run(dir, ['check']);
   assert.doesNotMatch(out, /FAIL/);
+});
+
+test('the installed skill is rendered, never the raw template', () => {
+  // It was checked in with the original author's home directory baked into
+  // `allowed-tools`, which is a permission grant and so cannot be relative.
+  // Copied verbatim, every other person got a /hero pointing into a directory
+  // they do not have.
+  const { dir } = sandbox({ hooks: { PreToolUse: [GUARDRAIL] } });
+  run(dir, ['skill']);
+  const live = fs.readFileSync(path.join(dir, 'skills', 'hero', 'SKILL.md'), 'utf8');
+  assert.doesNotMatch(live, /\{\{REPO\}\}/, 'the placeholder shipped unrendered');
+  assert.ok(live.includes(`Bash(node ${REPO}/bin/rpg.js *)`), 'allowed-tools does not point at this clone');
+  assert.equal(run(dir, ['skill']).includes('already current'), true, 'a second run should be a no-op');
+
+  // And the doctor must notice an unrendered copy rather than passing it.
+  fs.writeFileSync(path.join(dir, 'skills', 'hero', 'SKILL.md'),
+    fs.readFileSync(path.join(REPO, 'skill', 'SKILL.md'), 'utf8'));
+  assert.match(run(dir, ['check'], { expectFail: true }), /unrendered/);
 });
 
 test('check reads the hero out of a real save', () => {

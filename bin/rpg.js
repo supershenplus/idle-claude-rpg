@@ -23,7 +23,7 @@ function flag(name) {
 }
 
 function requireSave() {
-  S.tryFold(Date.now());
+  S.tryFold(Date.now(), { cwd: process.cwd() });
   const state = S.loadState();
   if (!state) {
     console.log('No hero yet. Run: /hero init   (or: rpg.js init --class wizard --name You)');

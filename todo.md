@@ -6,6 +6,48 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 
 ---
 
+## v2.0 — 2026-07-28 ✅ — the War Horn actually sounds, and installs work
+
+- [x] **`git push` is detected from git, not from the hook.** The classifier only
+      ever sees commands *Claude* runs, so a push typed with `!`, made in another
+      terminal, or made from an IDE fired nothing. Found the honest way: a save
+      with 17 commits, 44 passing tests and `pushes: 0` after three real pushes.
+      The headline feature of the README had never once fired for its own author
+- [x] `lib/gitwatch.js` reads the refs directly — no subprocess, no git binary
+      needed. A push is "the remote-tracking ref moved **and** now equals local
+      HEAD"; the second half is what separates a push from a fetch, since
+      fetching someone else's work advances `origin/main` to a commit you don't
+      have. Handles packed-refs (a `git gc` would otherwise blind it), worktrees
+      and submodules (`.git` as a file), non-`origin` remotes, and subdirectories
+- [x] Wired into `state.tryFold`, not into either caller: it is the one place
+      holding the lock, the loaded state and the write. The hook and the
+      statusline therefore share **one recorded SHA per repo**, so whichever
+      sees the change first fires and the other sees none — that shared record
+      is the entire dedup, with no time window to tune
+- [x] One exception needed an explicit guard: a push Claude runs through the
+      Bash tool produces *both* a classified event and a moved ref. Suppressed
+      on the batch (`events.some(e => e.e === 'push')`) rather than on a clock,
+      since the hook appends and folds in the same breath
+- [x] `state.repos` is bounded at 24 entries — a save follows the user across
+      every project they ever open. First sighting records silently, so opening
+      a new repo is never a free War Horn
+- [x] **`skill/SKILL.md` had the author's home directory baked in**, including in
+      `allowed-tools`, which is a permission grant and cannot be relative. The
+      installer copied it verbatim, so every other person on earth got a `/hero`
+      pointing into a directory they don't have. Now a `{{REPO}}` template
+      rendered by `bin/settings.js skill`
+- [x] **The repo's copy of the skill was also two versions behind the installed
+      one** — `equip best`, the status nudge and the entire Insight board were
+      written into `~/.claude/skills/hero/` and never made it back. A clone
+      shipped a `/hero` that had never heard of half the game, and nothing
+      failed, because a missing prose section reads like one that was never
+      needed. `test/skill.test.js` now diffs the skill against the CLI's own
+      command list
+- [x] Fixed a latent flake: the shop test demanded `restocks in \d+h \d+m`,
+      which is wrong for one hour in every four
+- [x] 24 new tests (141 total), incl. gitwatch against **real** git repositories
+      rather than fixtures — the module exists to read what git actually writes
+
 ## v1.9 — 2026-07-28 ✅ — you can see it without installing it
 
 - [x] **`node bin/demo.js`** renders the eleven HUD states worth looking at —
@@ -252,6 +294,31 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 
 ## Backlog (v1.1+)
 
+- [ ] **Redraw the rogue's big art** — it's the one class whose silhouette
+      doesn't resolve into anything. Every other class has a weapon with a
+      through-line you can trace: the wizard's staff is a continuous `┃` down
+      rows 1-3, the ranger's bowstring holds one column across all five (pinned
+      by a test), the knight's `▬` runs into the sword. The rogue has a `╲` on
+      row 3 and a `▼` on row 4 that touch nothing and read as debris:
+      ```
+      0|  ○   ·|          the head is a bare ○ — wizard and ranger both
+      1| ▟███▙|           frame theirs (▐◉▌, ▐●▌), so this reads as a bubble
+      2|░▒█▪▙▄▄|          ▄▄ trails off right into nothing
+      3|░▒███▓ ╲|         ╲ floats, unattached
+      4| ▜▛ ▜▙   ▼|       ▼ is three cells clear of the body
+      ```
+      Its one-line sprite is `(¬‿¬)⌐╦╦═─` (a crossbow) and its projectile is
+      `╫` on a `─` trail, so the big art should be aiming something horizontal
+      to the right; right now nothing points anywhere. Widths also ramp
+      7,6,7,8,10 straight down, and since each row is centred in its own block
+      that makes the figure lean — see the fixed-point note in the README before
+      nudging spaces by eye
+- [ ] Two smaller sprite nits, both cosmetic and both long-deferred: `harpy` has
+      a stray `▚` floating off the right wing, and `leech` is 8 cells wide where
+      the rest of the set is 11-13, so it reads undersized next to its zone
+- [ ] One-line sprites in `lib/content.js` are still the original kaomoji — only
+      the 5-row big art was redrawn in v1.2, so compact and mini HUD modes never
+      got the pass
 - [ ] Cosmetic titles from the shop; trinket special affixes
 - [ ] Shop daily rotation (seeded by date+zone) + "Boss Drum" consumable to arm the boss early
 - [ ] Heisenbug gag: sprite renders in a different spot each frame (it moves when observed)
