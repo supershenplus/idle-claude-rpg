@@ -62,7 +62,7 @@ function main() {
     const line = `Lv${h.level} ${cls.name.slice(0, 3)} ♥${h.hp} `
       + `${m.name ? m.name.replace(/ /g, '') : ''} Lv${m.level || '?'} `
       + `${R.fmt(m.hp || 0)}/${R.fmt(m.maxHp || 0)}`;
-    console.log(R.fit(line, cols));
+    console.log(R.keepIndent(R.fit(line, cols)));
     return;
   }
 
@@ -181,7 +181,7 @@ function main() {
     out = [line1, ...art, infoRow, tickerLine()];
   }
 
-  console.log(out.map(l => R.fit(l, cols)).join('\n'));
+  console.log(out.map(l => R.keepIndent(R.fit(l, cols))).join('\n'));
 }
 
 // stdin may or may not arrive; render on end, but don't hang waiting forever.
