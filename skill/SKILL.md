@@ -12,6 +12,13 @@ Map the user's arguments directly onto it:
 - `/hero` (no args) → `node <cli> status`
 - `/hero status | zone | shop | inventory | stats` → same subcommand verbatim
 - `/hero zone go <id>`, `/hero shop buy <n>`, `/hero equip <n>`, `/hero sell <n>` → pass through as-is
+- Bulk selling: `/hero sell all`, or by rarity — `/hero sell commons`, `/hero sell common rare`.
+  Pass the words through verbatim; the CLI does the matching. It touches the bag only,
+  never equipped gear. **Two steps, always:** run it without `--confirm` first — that only
+  prints what would go — relay the list, and re-run with `--confirm` appended once the user
+  says yes. Never add `--confirm` yourself on the first call, even if the user sounded
+  decisive: the point of the preview is that they see which items match before the gold is
+  the only thing left. `/hero sell <n>` is a single named item and sells immediately.
 - `/hero reset` → warn that this deletes the hero, and only run with `--confirm` after the user confirms
 
 ## First-run init
