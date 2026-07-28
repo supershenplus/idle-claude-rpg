@@ -6,6 +6,7 @@
 
 const E = require('../lib/engine');
 const B = require('../lib/balance');
+const C_ = require('../lib/content');
 const { mulberry32 } = require('../lib/rng');
 
 // Event mix for a heavy Claude Code day
@@ -74,6 +75,23 @@ function run(days, perDay, print, opts) {
     // who never once opened their inventory.
     if (equip !== 'none') E.autoEquip(state, { displace: equip === 'upgrade' });
 
+    // …and pours gold into what it's wearing, because upgrades are the only
+    // thing gold is for. Cheapest-first with half the purse held back, which is
+    // roughly how anyone spends: top up the affordable things, keep a cushion.
+    if (equip === 'upgrade') {
+      for (let guard = 0; guard < 500; guard++) {
+        let best = null;
+        for (const k of C.EQUIP_KEYS) {
+          const it = state.equipment[k];
+          if (!it || (it.plus || 0) >= B.UPGRADE_MAX) continue;
+          const cost = B.upgradeCost(it.ilvl, it.plus || 0);
+          if (!best || cost < best.cost) best = { it, cost };
+        }
+        if (!best || best.cost > state.hero.gold * 0.5) break;
+        if (!E.upgradeItem(state, best.it).ok) break;
+      }
+    }
+
     // fold in hour-sized chunks (closer to reality than one mega-fold)
     for (let h = 0; h < 8; h++) {
       const chunk = events.filter(ev => ev.t >= dayStart + h * 3600000 && ev.t < dayStart + (h + 1) * 3600000);
@@ -130,6 +148,21 @@ function assertBalance() {
   check(deaths >= 1 && perDeath >= 4 && perDeath <= 30,
     `attentive player dies every ${perDeath === Infinity ? '∞' : perDeath.toFixed(0)} days `
     + `(${deaths} total, want one per 4-30 days)`);
+
+  // The sink has to actually absorb. Before upgrading existed an attentive
+  // player finished a run holding ~1.07M gold with nothing left to buy, and the
+  // figure barely moved whatever the death penalty was set to.
+  const goldAtCap = at300.state.hero.gold;
+  const invested = C_.EQUIP_KEYS.reduce((sum, k) => {
+    const it = at300.state.equipment[k];
+    if (!it) return sum;
+    let spent = 0;
+    for (let p = 0; p < (it.plus || 0); p++) spent += B.upgradeCost(it.ilvl, p);
+    return sum + spent;
+  }, 0);
+  check(goldAtCap < 250_000 && invested > goldAtCap,
+    `sink absorbed ${invested}g into gear, leaving ${goldAtCap}g idle `
+    + '(want idle < 250k and less than what was spent)');
 
   // No profile may be walled. A boss used to reset to full HP on death, so a
   // hero who could not win one could never progress past that zone at all —

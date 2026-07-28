@@ -6,6 +6,35 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 
 ---
 
+## v1.5 — 2026-07-28 ✅ — gold has somewhere to go
+
+- [x] **`/hero upgrade`** — worn gear only, `+0…+10`, each `+` worth 2% of the
+      item's rolled stats, costing `5·ilvl·(plus+1)²`. Quadratic on purpose: a
+      full set at +10 runs ~1.16M, about a whole run's income, so you are always
+      choosing which items to invest in. Sim: absorbs 515k, leaves 69k idle
+      against the ~1.07M an attentive player used to finish holding
+- [x] The sink doesn't leak — `engine.sellPrice` ignores `plus` entirely, so
+      upgrade gold is destroyed rather than being a 25%-refundable deposit.
+      `engine.itemValue` *does* count it, so auto-equip never benches an item
+      you poured gold into in favour of an identical raw drop
+- [x] `gearSum` totals all twelve slots **unrounded** and rounds once. At 2% a
+      level a single upgrade is usually sub-integer (+2% of a def-11 chestpiece
+      is 0.22), and rounding per-slot silently discarded nearly all of it — a
+      set at +10 measured almost the same as a set at +0
+- [x] Power had to come down twice: at 5%/+ and then 3%/+ the attentive player
+      stopped dying (40 days/death, outside the punctuation band), because every
+      point of def/atk/hp makes bosses safer. 2% keeps the 23-day cadence *and*
+      still absorbs the gold — the sink's appetite comes from the cost curve,
+      not the reward, so it works even at 0% power
+- [x] Upgrading is deliberately poor value early (2% of a 3-point stat is a
+      rounding error, and the same gold buys a whole rare off the shelf), so
+      `upgrade <slot> max` previews the ATK/DEF/HP its spend would buy and says
+      so outright when the gain rounds to nothing
+- [x] 6 new tests + a sink gate in the sim (gold absorbed > gold idle)
+- [x] No save migration: `plus` is absent on every pre-v1.5 item and every read
+      path defaults it to 0, which is strictly safer than a migration that
+      rewrites saves to add a zero
+
 ## v1.4 — 2026-07-28 ✅ — death is punctuation
 
 - [x] **The balance sim never equipped anything.** It folded 83 days of combat
@@ -103,18 +132,6 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 - [ ] Shop daily rotation (seeded by date+zone) + "Boss Drum" consumable to arm the boss early
 - [ ] Heisenbug gag: sprite renders in a different spot each frame (it moves when observed)
 - [ ] Per-session stats view
-- [ ] **A gold sink — the economy has no floor now.** Death was doing this job
-      by accident and it never really worked: an attentive player finishes with
-      **~1.07M gold** whether the death penalty is 5% or 30%, because they die
-      ~4 times in a run. (This is not a v1.4 regression — a real equipping
-      player was always near-immortal, so they always ended around 1M. The old
-      "135k at cap" figure was an artifact of the naked sim.) Raising the
-      penalty is the wrong lever: it barely touches the attentive player and
-      falls entirely on the struggling one, who needs gold to buy their way out.
-      Wanted instead: something with an unbounded appetite that scales with
-      ilvl. Best candidate is **gear upgrading / reforging** — it deepens the
-      loot chase, gives duplicate drops a purpose, and adds the second real
-      decision the game has. Others: the Boss Drum consumable below, re-rolls.
 - [ ] `equip all` is arguably a trap: it's strictly additive by design, so a
       player who runs it once is "geared" forever and silently rots — that's the
       sim's `fill` profile, which dies ~240 times a run. Consider a nudge when

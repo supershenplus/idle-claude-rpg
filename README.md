@@ -96,6 +96,28 @@ a set you can't see from the command you typed, so they print what would go and
 sell nothing until you re-run with `--confirm`. `/hero sell <n>` is one item you
 just read off `/hero inventory`, so it sells immediately.
 
+## Where gold goes
+
+`/hero upgrade` pours gold into gear you already wear: `+0` to `+10`, each level
+worth 2% of what that item rolled, at a cost of `5 · ilvl · (plus+1)²`. The curve
+is quadratic, so a full set at +10 runs to about a whole run's income — you are
+meant to be choosing which items to invest in, never maxing everything.
+
+This exists because gold had no floor. Levels cap and loot caps, but an attentive
+player finished a run holding **~1.07M** with nothing left to buy, and the number
+barely moved whatever the death penalty was set to (they only die a few times).
+Upgrades absorb ~515k of that in the sim and leave ~69k idle.
+
+The gold is genuinely destroyed: sell price ignores `+` entirely, so upgrading is
+never a refundable deposit. What `+` *does* count toward is which item you'd
+rather wear, so auto-equip never benches gear you invested in for an identical
+raw drop.
+
+Early on it is deliberately bad value — 2% of a 3-point stat is a rounding error,
+and the same gold buys a whole rare off the shelf. `upgrade <slot> max` shows the
+ATK/DEF/HP its spend would actually buy and says so outright when the gain rounds
+to nothing, so the trap is visible before the gold is gone rather than after.
+
 ## Install
 
 ```sh
@@ -132,6 +154,7 @@ legacy gear doesn't permanently outclass every new drop for its slot.
 
 `/hero` (status) · `/hero zone [go <id>]` · `/hero shop [buy <n>]` ·
 `/hero inventory` · `/hero equip <n> [slot] | all` ·
+`/hero upgrade [<slot> [max]] [--confirm]` ·
 `/hero sell <n> | all | <rarity…> [--confirm]` · `/hero stats`
 
 All of it also works token-free as `! node bin/rpg.js <cmd>`.
@@ -175,7 +198,7 @@ literally immune, while an under-geared one ate the entire curve.)
 ## Dev
 
 ```sh
-node --test 'test/*.test.js'      # 71 tests incl. concurrency stress
+node --test 'test/*.test.js'      # 77 tests incl. concurrency stress
 node test/sim.js --days 90        # replay synthetic days through the engine
 node test/sim.js --assert         # balance gates, across all three equip profiles
 ```
