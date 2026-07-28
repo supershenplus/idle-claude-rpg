@@ -18,6 +18,7 @@ const HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'rpg-cli-test-'));
 process.env.IDLE_RPG_HOME = HOME;
 
 const C = require('../lib/content');
+const P = require('../lib/paths');
 const B = require('../lib/balance');
 const E = require('../lib/engine');
 const S = require('../lib/state');
@@ -215,4 +216,129 @@ test('a shelf that rotated since you last looked cancels the buy', () => {
   const retry = run('shop', 'buy', '1');
   assert.match(retry, /^Bought /);
   assert.strictEqual(S.loadState().inventory.length, 1);
+});
+
+// ---------------------------------------------------------------------------
+// The destructive paths. Every one of these either empties the bag, spends
+// gold that never comes back, or deletes the hero, and each is gated by
+// --confirm. The gates were read and found correct; nothing pinned them, so a
+// refactor could drop one silently and the first person to notice would be a
+// player who had already lost the thing.
+
+// `reset` without --confirm exits 1, so it cannot go through `run`.
+function runFail(...args) {
+  try {
+    execFileSync('node', [CLI, ...args], {
+      env: { ...process.env, IDLE_RPG_HOME: HOME }, encoding: 'utf8', stdio: 'pipe',
+    });
+  } catch (e) {
+    return { out: R.visible(String(e.stdout || '')), code: e.status };
+  }
+  assert.fail(`${args.join(' ')} succeeded — it was expected to exit non-zero`);
+}
+
+const bagValue = st => st.inventory.reduce((sum, it) => sum + E.sellPrice(it), 0);
+
+test('sell all previews the whole bag and only empties it on --confirm', () => {
+  const st0 = seed(st => {
+    st.inventory = [item('head', 3), item('weapon', 12, 'rare'), item('feet', 7, 'epic')];
+  });
+  const worth = bagValue(st0);
+
+  const preview = run('sell', 'all');
+  assert.match(preview, /This would sell 3 of 3 items/);
+  assert.match(preview, /Nothing sold yet/);
+  assert.match(preview, /confirm with:\s+\/hero sell all --confirm/);
+  assert.strictEqual(S.loadState().inventory.length, 3, 'the preview emptied the bag');
+  assert.strictEqual(S.loadState().hero.gold, st0.hero.gold, 'the preview paid out');
+
+  const out = run('sell', 'all', '--confirm');
+  assert.match(out, /Sold 3 items/);
+  const st = S.loadState();
+  assert.strictEqual(st.inventory.length, 0, 'the bag was not emptied');
+  assert.strictEqual(st.hero.gold, st0.hero.gold + worth, 'paid out something other than the listed total');
+});
+
+test('sell <rarities> takes only the rarities it named', () => {
+  const keep = [item('head', 3), item('chest', 4, 'legendary')];
+  const st0 = seed(st => {
+    st.inventory = [keep[0], item('weapon', 12, 'rare'), keep[1], item('feet', 7, 'epic'), item('neck', 5, 'rare')];
+  });
+  const worth = bagValue(st0) - bagValue({ inventory: keep });
+
+  // Plural and comma forms both resolve, and both name the same set.
+  const preview = run('sell', 'rares,epic');
+  assert.match(preview, /This would sell 3 of 5 items/);
+  assert.match(preview, /2 items would stay in the bag/);
+  assert.strictEqual(S.loadState().inventory.length, 5, 'the preview sold something');
+
+  run('sell', 'rares,epic', '--confirm');
+  const st = S.loadState();
+  assert.deepStrictEqual(st.inventory.map(i => i.id), keep.map(i => i.id),
+    'sold the wrong items — the survivors are not the ones it was told to keep');
+  assert.strictEqual(st.hero.gold, st0.hero.gold + worth, 'paid out the wrong total');
+});
+
+test('selling one item by number needs no confirmation', () => {
+  // The deliberate asymmetry: a number names exactly one line you just read off
+  // `/hero inventory`, so there is nothing a preview would tell you.
+  const st0 = seed(st => { st.inventory = [item('head', 3), item('weapon', 12, 'rare')]; });
+  const gone = st0.inventory[1];
+
+  const out = run('sell', '2');
+  assert.match(out, new RegExp(`Sold ${gone.name} for`));
+  const st = S.loadState();
+  assert.deepStrictEqual(st.inventory.map(i => i.id), [st0.inventory[0].id]);
+  assert.strictEqual(st.hero.gold, st0.hero.gold + E.sellPrice(gone));
+});
+
+test('upgrade max previews the spend and the stats before it takes the gold', () => {
+  const st0 = seed(st => {
+    st.hero.gold = 60000;
+    st.equipment.weapon = item('weapon', 40, 'rare');
+  });
+
+  const preview = run('upgrade', 'weapon', 'max');
+  assert.match(preview, /from \+0 to \+\d+ for/);
+  assert.match(preview, /ATK \d+ → \d+/, 'the preview did not show what the gold buys');
+  assert.match(preview, /Nothing spent yet/);
+  assert.strictEqual(S.loadState().hero.gold, st0.hero.gold, 'the preview spent gold');
+  assert.strictEqual(S.loadState().equipment.weapon.plus || 0, 0, 'the preview upgraded the item');
+
+  run('upgrade', 'weapon', 'max', '--confirm');
+  const st = S.loadState();
+  assert.ok(st.equipment.weapon.plus > 0, 'confirming upgraded nothing');
+  assert.ok(st.hero.gold < st0.hero.gold, 'confirming cost nothing');
+  // `max` spends until the next step is unaffordable, so what is left over must
+  // not cover it — otherwise it stopped early and the preview lied.
+  assert.ok(st.equipment.weapon.plus === B.UPGRADE_MAX
+    || st.hero.gold < B.upgradeCost(st.equipment.weapon.ilvl, st.equipment.weapon.plus),
+    'stopped upgrading while it could still afford another level');
+});
+
+test('reset refuses without --confirm and leaves the save untouched', () => {
+  const st0 = seed(st => { st.inventory = [item('head', 3)]; });
+  const { out, code } = runFail('reset');
+
+  assert.match(out, /deletes your hero forever/);
+  assert.strictEqual(code, 1, 'refusing to delete should be a failure exit');
+  const st = S.loadState();
+  assert.ok(st, 'the save is gone');
+  assert.strictEqual(st.hero.gold, st0.hero.gold);
+  assert.strictEqual(st.inventory.length, 1);
+});
+
+test('reset --confirm deletes every file the save is spread across', () => {
+  seed();
+  // A save is five files, not one: leaving the inbox or the lock behind means
+  // the next hero inherits the last one's queued events.
+  const files = [P.stateFile, P.bakFile, P.eventsFile, P.processingFile, P.lockFile];
+  for (const f of files) fs.writeFileSync(f, f === P.stateFile ? fs.readFileSync(P.stateFile) : 'x');
+
+  const out = run('reset', '--confirm');
+  assert.match(out, /Save deleted/);
+  for (const f of files) {
+    assert.ok(!fs.existsSync(f), `${path.basename(f)} survived the reset`);
+  }
+  assert.strictEqual(S.loadState(), null, 'a hero can still be loaded after a reset');
 });

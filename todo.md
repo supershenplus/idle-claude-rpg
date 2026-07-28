@@ -114,11 +114,24 @@ tests that were verified to fail without their fix. The rest:
       both verified to fail against the old file. They assert the monster art
       lands in the *same columns* as an ordinary 38-damage hit, since a check on
       line width alone is tautological: `R.fit` guarantees it and the bug survives
-- [ ] **W1-EOW-destructive-cmd-tests** — the destructive CLI paths have no
+- [x] **W1-EOW-destructive-cmd-tests** — the destructive CLI paths had no
       subprocess coverage: `sell all` / `sell <rarities>`, `upgrade <slot> max`,
-      and `reset --confirm` (which unlinks state, bak, events, processing, lock).
-      The `--confirm` gates were read and found correct, but nothing pins them, so
-      a refactor could drop a gate silently. Mirror the existing `insight max` test
+      and `reset --confirm`. The `--confirm` gates were read and found correct,
+      but nothing pinned them, so a refactor could drop one silently and the first
+      person to notice would be a player who had already lost the thing. 6 new
+      tests (170 total), run the way the commands are: a subprocess against a real
+      save
+- [x] Each test asserts on the *save after the fact*, not on the printed preview
+      — the gate that matters is the one that stops gold moving. `sell` also pins
+      its deliberate asymmetry: `sell 2` names one line you just read off
+      `/hero inventory`, so it goes through with no confirmation at all, while
+      `all` and rarity words match a set you cannot see from the command
+- [x] Verified by mutation rather than by writing them red: replacing each gate
+      with `if (false)` fails exactly the tests that cover it (sell → 2, upgrade
+      → 1, reset → 1), and shortening `reset`'s unlink list to two of its five
+      files fails on `events.ndjson survived the reset`. A save is spread across
+      five files, and leaving the inbox or the lock behind hands the next hero the
+      last one's queued events
 - [ ] **W1-EOW-migration-untested** — the v1→v2 migration body (`lib/state.js:23-52`
       — reslot-by-noun, stat re-roll, hp refresh) has no direct test; coverage stops
       at "fresh v2 round-trips" and "unknown version rejected". This is the one path
