@@ -2,7 +2,7 @@
 
 // Balance sim: replays N synthetic days through the real engine (in memory,
 // no fs). Usage: node test/sim.js --days 90 --events 300
-// Asserts (exit 1 on failure): L60 in 55-120 days @300/day; never <25 days @500.
+// Asserts (exit 1 on failure): L60 in 40-120 days @300/day; never <25 days @500.
 
 const E = require('../lib/engine');
 const B = require('../lib/balance');
@@ -63,15 +63,12 @@ function run(days, perDay, print, opts) {
     }
     const bossKillsBefore = state.counters.bossKills;
 
-    // auto-travel like a player would: move up when the zone is outleveled
-    const C = require('../lib/content');
-    const zone = C.zoneById(state.hero.zone);
-    const next = C.nextZone(state.hero.zone);
-    if (next && state.hero.unlockedZones.includes(next.id) && state.hero.level >= next.min) {
-      state.hero.zone = next.id;
-      zonesSeen.add(next.id);
-      E.spawnMonster(state, rand);
-    }
+    // Travel is the engine's job now (`E.maybeTravel`, folded once per batch).
+    // The sim used to carry its own copy of the rule at the day boundary, which
+    // meant the numbers below described a travel policy no player ever ran.
+    // Same reasoning as `E.autoEquip` in v1.4: the sim plays the real game.
+    zonesSeen.add(state.hero.zone);
+    const C = C_;
 
     // …and wear what it finds. Without this the sim folded 83 days of combat
     // with all twelve slots empty, so every number it reported — deaths above

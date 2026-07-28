@@ -133,6 +133,16 @@ const SCENES = {
       return st;
     },
   },
+  travel: {
+    blurb: 'outgrowing a zone — automatic travel',
+    build: now => {
+      const st = hero(now, { cls: 'knight', name: 'Bastion', level: 19, zone: 'archives', gold: 14200, hpFrac: 0.84 });
+      st.monster = monster('archives', 'librarian', 19, 1);
+      st.anim = [anim('travel', 5000, { name: 'Sunken Archives' }, now)];
+      st.ticker = [R.c('dim', 'travelled to Sunken Archives')];
+      return st;
+    },
+  },
   kill: {
     blurb: 'a kill — the monster flips to (x_x)',
     build: now => {

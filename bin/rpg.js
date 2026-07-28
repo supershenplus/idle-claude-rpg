@@ -291,8 +291,7 @@ const commands = {
       const z = C.zones.find(z => z.id === id);
       if (!z) { console.log(`Unknown zone "${id}". /hero zone to list.`); process.exit(1); }
       if (!st.hero.unlockedZones.includes(id)) { console.log(`${z.name} is locked — beat the previous zone's boss first.`); process.exit(1); }
-      st.hero.zone = id;
-      E.spawnMonster(st, mulberry32(Date.now() >>> 0));
+      E.travelTo(st, id, mulberry32(Date.now() >>> 0), Date.now());
       E.tick(st, `travelled to ${z.name}`);
       S.saveState(st);
       console.log(`Travelled to ${z.name}. A ${st.monster.name} ${st.monster.sprite} blocks the path!`);

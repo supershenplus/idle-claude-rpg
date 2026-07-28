@@ -8,6 +8,33 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 
 ## Found in play — 2026-07-28
 
+- [x] **Travel is automatic now.** Beating a zone's boss unlocked the next zone
+      and then said nothing that lasted: a 6s banner and a ticker line that
+      scrolls off in three events. The standing nudge (`statusline:99`) waits for
+      `level > zone.max + 2`, so after a first clear at level 8 the game knew the
+      Caves were open and stayed quiet for four levels — while the Grove re-armed
+      Rootfang, making "farm a boss you already beat" the default path
+- [x] The trigger is **unlocked *and* at the new zone's level floor**, not the
+      boss kill. The boss gate opens at `boss.level - 1` and the next zone starts
+      one above the boss, so on a first clear you are *always* two levels short —
+      switching on the kill would drop every hero into a zone under-levelled,
+      every time. Never fires mid-boss either: past the first clear that is a
+      re-armed boss the player chose to fight
+- [x] This is the rule `test/sim.js` had been playing by all along, in its own
+      copy at the day boundary — so every number the sim asserts already
+      described it. Moved into the engine and the sim now plays the real one,
+      same call as `E.autoEquip` in v1.4. Twelve gates hold: cap day 45 → 44,
+      deaths one per 23 → 22 days, boss cadence 3.3 → 2.4 days (bosses arrive
+      sooner because zones do), sink 515k → 455k
+- [x] `E.travelTo` is now the single path for typed *and* automatic travel, which
+      surfaced a real divergence: `killsSinceBoss` is one global counter meaning
+      "kills toward the boss of the zone I'm in", and `/hero zone go` carried it
+      across the border. Since `monsterLevel` reads it to escalate trash, walking
+      into an unseen zone with a full counter spawned its *top* tier on the first
+      step — precisely the cliff the v1.3 escalation curve exists to remove
+- [x] 6 new tests + a `travel` demo scene (161 total), since a banner branch that
+      fires once per zone is exactly what the demo exists to cover
+
 - [x] **The kill scene ran in the wrong order.** Reported from the statusline:
       killing a monster showed the *next* one first, then the death of the last
       one, then back. `resolveKill` spawns the replacement immediately

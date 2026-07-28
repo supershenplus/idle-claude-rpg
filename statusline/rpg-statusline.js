@@ -124,6 +124,8 @@ function main(stdin) {
         return R.c('cyan', `⌛ while away: ${anim.data.kills} kills +${R.fmt(anim.data.xp)}xp +${R.fmtGold(anim.data.gold)}`);
       case 'kill':
         return R.c('green', `${anim.data.name} slain  +${R.fmt(anim.data.xp)}xp +${R.fmtGold(anim.data.gold)}`);
+      case 'travel':
+        return R.c('brightGreen', `⇒ ${anim.data.name} — you have outgrown the last zone`);
       case 'loot':
         return R.rarityColored(anim.data.rarity, `≡ [${anim.data.rarity}] ${anim.data.name} dropped!`);
       default:

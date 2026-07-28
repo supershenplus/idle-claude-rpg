@@ -699,3 +699,85 @@ test('a non-fatal hit is not tagged with a monster', () => {
   assert.strictEqual(blow.data.mon, undefined);
   assert.strictEqual(s.counters.kills, 0);
 });
+
+// ---------- automatic travel ----------
+
+test('travel is automatic once the next zone is unlocked and its floor is met', () => {
+  const s = fresh();
+  s.hero.unlockedZones.push('caves');
+  s.hero.level = C.zoneById('caves').min;
+  E.fold(s, [], T0 + 1000);
+  assert.strictEqual(s.hero.zone, 'caves');
+  assert.ok(s.anim.some(a => a.type === 'travel'), 'the HUD is told about it');
+});
+
+test('clearing a boss unlocks the next zone but does not move an under-levelled hero', () => {
+  // The shape of a real first clear: the boss gate opens at `boss.level - 1`
+  // and the next zone starts one level above the boss, so you are always two
+  // levels short of the place you just unlocked.
+  const s = fresh('knight');
+  const caves = C.zoneById('caves');
+  s.hero.level = C.zoneById('grove').boss.level - 1;
+  s.counters.killsSinceBoss = B.BOSS_KILLS_REQUIRED;
+  E.spawnMonster(s, () => 0.5);
+  assert.ok(s.monster.isBoss, 'the boss is up');
+
+  s.monster.hp = 1;
+  E.fold(s, [ev('commit', T0 + 1000)], T0 + 1000);
+  assert.strictEqual(s.counters.bossKills, 1);
+  assert.ok(s.hero.unlockedZones.includes('caves'), 'the next zone unlocked');
+  assert.ok(s.hero.level < caves.min, 'and the hero is below its floor');
+  assert.strictEqual(s.hero.zone, 'grove', 'so they stay put rather than being dropped in under-levelled');
+});
+
+test('travel never walks the hero out of a boss fight', () => {
+  // Getting here means the zone is already cleared, so this is a re-armed boss
+  // the hero chose to fight — the one case where automatic travel could cost
+  // somebody something.
+  const s = fresh();
+  s.hero.unlockedZones.push('caves');
+  s.hero.level = C.zoneById('caves').min;
+  s.monster = { id: 'treant', name: 'Rootfang', level: 9, isBoss: true, sprite: '(T)', hp: 400, maxHp: 1200 };
+  E.fold(s, [], T0 + 1000);
+  assert.strictEqual(s.hero.zone, 'grove', 'still in the fight');
+
+  // …and goes as soon as that fight is over.
+  s.monster.isBoss = false;
+  E.fold(s, [], T0 + 2000);
+  assert.strictEqual(s.hero.zone, 'caves');
+});
+
+test('travel does not fire into a zone that is still locked', () => {
+  const s = fresh();
+  s.hero.level = 40;
+  E.fold(s, [], T0 + 1000);
+  assert.strictEqual(s.hero.zone, 'grove');
+});
+
+test('travel resets the boss counter, so a new zone starts at its floor', () => {
+  // `killsSinceBoss` is one global counter meaning "kills toward the boss of
+  // the zone I am in", and `monsterLevel` reads it to escalate trash across the
+  // band. Carried across a border it would spawn an unseen zone's *top* tier on
+  // the first step — the cliff the escalation curve exists to remove.
+  const s = fresh();
+  s.hero.unlockedZones.push('caves');
+  s.hero.level = C.zoneById('caves').min;
+  s.counters.killsSinceBoss = B.BOSS_KILLS_REQUIRED - 1;
+  E.fold(s, [], T0 + 1000);
+  assert.strictEqual(s.hero.zone, 'caves');
+  assert.strictEqual(s.counters.killsSinceBoss, 0);
+  assert.ok(s.monster.level <= C.zoneById('caves').min + 1,
+    `arrived against bottom-tier trash, got Lv${s.monster.level}`);
+});
+
+test('typed travel and automatic travel are the same operation', () => {
+  // `/hero zone go` used to set `hero.zone` and respawn by hand, so the two
+  // paths could drift — and did, on the boss counter.
+  const s = fresh();
+  s.hero.unlockedZones.push('caves');
+  s.counters.killsSinceBoss = 9;
+  assert.strictEqual(E.travelTo(s, 'caves', () => 0.5, T0), true);
+  assert.strictEqual(s.hero.zone, 'caves');
+  assert.strictEqual(s.counters.killsSinceBoss, 0);
+  assert.strictEqual(E.travelTo(s, 'caves', () => 0.5, T0), false, 'travelling where you already are is a no-op');
+});
