@@ -8,6 +8,22 @@ Your hero grinds while you code: hook events are the game tick. Full design in
 
 ## Found in play — 2026-07-28
 
+- [ ] **The monster's blow plays the hero's attack animation.** Reported from the
+      statusline: the mob hitting back drives the *ranger's* shot — bow draw and
+      all — when nothing the hero did should be firing. Logged unworked; the
+      report is the finding, the cause below is a starting point and not verified
+- [ ] Two sites make it plausible. A counter never gets an animation of its own:
+      `retaliate` folds its damage into whatever `hit` is already on the queue
+      (`lib/engine.js:543-546`), and the renderer decides the hero is attacking
+      from `anim.type === 'hit'` alone (`statusline/rpg-statusline.js:148`). So a
+      counter is drawn *through* the hero's attack frame, because that is the only
+      frame it has. Worth checking whether the symptom is a counter riding a real
+      hero attack, or a mob hit landing with no hero attack behind it at all —
+      those want different fixes, and only the second is straightforwardly a bug
+- [ ] Whatever the cause, the class that shows it worst is the one with a
+      projectile: `test/sprites.test.js` already pins the ranger's shot across
+      three widths, so the regression test has somewhere obvious to live
+
 - [x] **Travel is automatic now.** Beating a zone's boss unlocked the next zone
       and then said nothing that lasted: a 6s banner and a ticker line that
       scrolls off in three events. The standing nudge (`statusline:99`) waits for

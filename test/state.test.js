@@ -54,6 +54,47 @@ test('lock: second acquire fails, stale lock is stolen', () => {
   S.releaseLock();
 });
 
+// A pid that is definitely gone: spawnSync has already reaped it by the time
+// it returns. Pid 1 is the opposite — always alive, and never ours to signal,
+// so it exercises the EPERM branch of ownerGone rather than the plain path.
+const deadPid = () => require('child_process').spawnSync(process.execPath, ['-e', '0']).pid;
+const LIVE_FOREIGN_PID = 1;
+
+test('lock: a dead owner is stolen at once, a live one waits out the timeout', () => {
+  const dead = deadPid();
+  fs.writeFileSync(P.lockFile, JSON.stringify({ pid: dead, at: T0 }));
+  assert.ok(S.acquireLock(T0 + 100), 'a lock whose owner exited is not worth waiting on');
+  S.releaseLock();
+
+  // The wedged-but-alive case still gets its full LOCK_STALE_MS, and then
+  // still loses the lock — a lock nobody will break freezes the game.
+  fs.writeFileSync(P.lockFile, JSON.stringify({ pid: LIVE_FOREIGN_PID, at: T0 }));
+  assert.ok(!S.acquireLock(T0 + 1000), 'a live owner holds it inside the timeout');
+  assert.ok(S.acquireLock(T0 + 20_000), 'and loses it after — fail open, always');
+  S.releaseLock();
+});
+
+test('orphaned staging files are reaped, live writers are left alone', () => {
+  const dead = deadPid();
+  const f = pid => path.join(HOME, `state.tmp.${pid}.json`);
+  for (const pid of [dead, LIVE_FOREIGN_PID, process.pid]) fs.writeFileSync(f(pid), '{}');
+  fs.writeFileSync(path.join(HOME, 'state.tmp.notapid.json'), '{}');
+
+  S.reapOrphanTmp();
+  assert.ok(!fs.existsSync(f(dead)), 'a crashed writer\'s staging file was left to rot');
+  assert.ok(fs.existsSync(f(LIVE_FOREIGN_PID)), 'reaped a live process\'s staging file');
+  assert.ok(fs.existsSync(f(process.pid)), 'reaped our own staging file mid-write');
+  assert.ok(fs.existsSync(path.join(HOME, 'state.tmp.notapid.json')), 'ate a file it cannot own');
+});
+
+test('a fold reaps what a crash left behind', () => {
+  const orphan = path.join(HOME, `state.tmp.${deadPid()}.json`);
+  S.saveState(E.newState('wizard', 'Reaper', T0));
+  fs.writeFileSync(orphan, '{}');
+  assert.ok(S.tryFold(T0 + 1000));
+  assert.ok(!fs.existsSync(orphan), 'the fold holds the lock but never cleans up');
+});
+
 test('tryFold drains the inbox into state', () => {
   S.saveState(E.newState('wizard', 'Fold', T0));
   S.appendEvent({ t: T0 + 1000, e: 'attack_jab', sid: 't', m: {} });

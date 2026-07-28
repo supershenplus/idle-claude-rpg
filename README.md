@@ -227,6 +227,22 @@ first; co-tenant hooks and a status line that isn't ours are left in place).
 Your hero survives in `~/.config/idle-claude-rpg/` — delete that directory by
 hand if you want it gone too.
 
+### What the save holds
+
+Everything lives in `~/.config/idle-claude-rpg/`, never leaves the machine, and
+is written with your default umask (usually mode `644` — readable by other users
+on a shared box). Beyond the obvious hero and loot, `state.json` keeps one entry
+per repo you have worked in: the **absolute path** to its git directory and the
+SHA its remote-tracking branch pointed at. That is how a push made outside
+Claude's tools is detected at all — see below — and it is capped at the 24
+most-recently-seen repos, oldest evicted first.
+
+The practical consequence is that your save lists which projects exist on the
+machine and roughly when each moved. Nothing is transmitted anywhere (the game
+makes no network calls and has no dependencies), but if that directory is
+readable by someone you'd rather not hand a project inventory to, `chmod 700` it
+— the game only ever reads and writes it as you.
+
 Saves migrate forward on load, so an old hero survives a pull. The v1→v2 jump
 (3 slots → 12) re-slots each item by the noun in its name — a Cloak was always a
 cloak, it just had nowhere to go — and re-rolls its stats onto the v2 curve, so
@@ -299,7 +315,7 @@ literally immune, while an under-geared one ate the entire curve.)
 ## Dev
 
 ```sh
-node --test 'test/*.test.js'      # 177 tests incl. concurrency stress
+node --test 'test/*.test.js'      # 191 tests incl. concurrency stress
 node test/sim.js --days 90        # replay synthetic days through the engine
 node test/sim.js --assert         # balance gates, across all three equip profiles
 node bin/demo.js --list           # HUD scenes, for screenshots and layout work

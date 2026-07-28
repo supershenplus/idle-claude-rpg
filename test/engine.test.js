@@ -18,6 +18,35 @@ test('newState: full hp, grove, live monster', () => {
   assert.ok(!s.monster.isBoss);
 });
 
+test('a hero name cannot steer the terminal it renders into', () => {
+  // The HUD prints the name roughly once a second. Anything here that survives
+  // reaches the terminal as a command, not as text.
+  assert.strictEqual(E.sanitizeName('\x1b[2JEva\x1b]8;;http://x\x07'), '[2JEva]8;;http://x');
+  assert.strictEqual(E.sanitizeName('a\x00b\x7fc\x9bd'), 'abcd');
+  assert.strictEqual(E.sanitizeName('Eva\nthe Bold'), 'Evathe Bold');
+
+  // Legitimate names are not collateral: accents, CJK and emoji all outlive it.
+  for (const ok of ['Évá', '勇者', 'Eva 🗡']) assert.strictEqual(E.sanitizeName(ok), ok);
+
+  // Empty, blank and unset all land on the same default rather than on ''.
+  for (const bad of ['', '   ', '\x1b\x1b', null, undefined]) {
+    assert.strictEqual(E.sanitizeName(bad), 'Hero');
+  }
+});
+
+test('a hero name is capped in code points, never mid-surrogate', () => {
+  const long = E.sanitizeName('🗡'.repeat(40));
+  assert.strictEqual(Array.from(long).length, E.NAME_MAX);
+  assert.ok(!/[\uD800-\uDFFF]/.test(long.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '')),
+    'the cap split a surrogate pair and left half a character behind');
+  assert.strictEqual(E.sanitizeName('x'.repeat(30)), 'x'.repeat(E.NAME_MAX));
+});
+
+test('newState sanitizes the name it is handed', () => {
+  assert.strictEqual(E.newState('wizard', '\x1b[31mRed', T0).hero.name, '[31mRed');
+  assert.strictEqual(E.newState('wizard', '', T0).hero.name, 'Hero');
+});
+
 test('jabs damage the monster and eventually kill it', () => {
   const s = fresh();
   const hp0 = s.monster.hp;

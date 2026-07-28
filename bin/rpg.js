@@ -231,7 +231,9 @@ const commands = {
     const state = E.newState(clsId, name, Date.now());
     S.saveState(state);
     const c = C.classes[clsId];
-    console.log(`\n  ${sprites.heroes[clsId].idle}  ${name} the ${c.name} awakens in ${C.zoneById('grove').name}.`);
+    // The saved name, not the flag: newState sanitizes, and echoing the raw
+    // argument would print the one string we just decided not to print.
+    console.log(`\n  ${sprites.heroes[clsId].idle}  ${state.hero.name} the ${c.name} awakens in ${C.zoneById('grove').name}.`);
     console.log(`  A wild ${state.monster.name} ${state.monster.sprite} appears!\n`);
     console.log('  Every command you run in Claude Code is now an attack. Go build something.');
   },
