@@ -164,7 +164,7 @@ const commands = {
     if (!st.inventory.length) { console.log('Bag is empty. Monsters drop loot as you code.'); return; }
     console.log(`\n  Bag (${st.inventory.length}/${B.INVENTORY_CAP}):\n`);
     st.inventory.forEach((it, i) => console.log('  ' + itemLine(it, i)));
-    console.log('\n  /hero equip <n> · /hero sell <n>');
+    console.log('\n  /hero equip <n> · /hero sell <n> · /hero sell commons rares · /hero sell all');
   },
 
   equip() {
@@ -182,17 +182,68 @@ const commands = {
     console.log(`Equipped ${itemLine(item)}${old ? ` (unequipped ${old.name} → bag)` : ''}.`);
   },
 
+  // Clearing a bag of grey junk one index at a time is the worst part of an
+  // idle game, so `sell` also takes `all` or any list of rarities:
+  //   sell 3 · sell all · sell commons · sell common, rare
+  // Anything unrecognised sells nothing rather than guessing — a wrong guess
+  // here is unrecoverable.
   sell() {
     const st = requireSave();
-    const n = parseInt(args[0], 10);
-    const item = st.inventory[n - 1];
-    if (!item) { console.log('Usage: /hero sell <n> (see /hero inventory)'); process.exit(1); }
-    const mult = B.RARITIES.find(r => r.id === item.rarity).mult;
-    const gold = Math.round(B.shopPrice(item.ilvl, mult) * B.SELL_FRAC);
-    st.inventory.splice(n - 1, 1);
+    const rarityIds = B.RARITIES.map(r => r.id);
+    const usage = `Usage: /hero sell <n> | all | <rarity…>  (rarities: ${rarityIds.join(', ')})`;
+    const words = args.filter(a => !a.startsWith('--'))
+      .join(' ').toLowerCase().split(/[\s,+]+/).filter(Boolean);
+    if (!words.length) { console.log(usage); process.exit(1); }
+    if (!st.inventory.length) { console.log('Bag is empty. Monsters drop loot as you code.'); return; }
+
+    // A number names exactly one item you just read off `/hero inventory`, so it
+    // sells outright. `all` and rarity words match a set you can't see from the
+    // command, so they preview first and only fire with --confirm.
+    let picked;
+    let bulk = true;
+    if (words.length === 1 && /^\d+$/.test(words[0])) {
+      const i = parseInt(words[0], 10) - 1;
+      if (!st.inventory[i]) { console.log(`No item ${words[0]} in the bag (see /hero inventory).`); process.exit(1); }
+      picked = [i];
+      bulk = false;
+    } else if (words.length === 1 && words[0] === 'all') {
+      picked = st.inventory.map((_, i) => i);
+    } else {
+      const want = new Set();
+      for (const w of words) {
+        const id = rarityIds.find(r => r === w || `${r}s` === w);
+        if (!id) { console.log(`Unknown rarity "${w}".\n${usage}`); process.exit(1); }
+        want.add(id);
+      }
+      picked = st.inventory.flatMap((it, i) => (want.has(it.rarity) ? [i] : []));
+    }
+    if (!picked.length) { console.log(`Nothing in the bag matches "${words.join(' ')}".`); return; }
+
+    const sold = picked.map(i => st.inventory[i]);
+    const value = it => Math.round(
+      B.shopPrice(it.ilvl, (B.RARITIES.find(r => r.id === it.rarity) || { mult: 1 }).mult) * B.SELL_FRAC);
+    const gold = sold.reduce((sum, it) => sum + value(it), 0);
+
+    if (bulk && !flag('confirm')) {
+      const keep = st.inventory.length - sold.length;
+      console.log(`\n  This would sell ${sold.length} of ${st.inventory.length} items for ${R.fmtGold(gold)}:\n`);
+      sold.forEach(it => console.log(`  ${itemLine(it)} — ${R.fmtGold(value(it))}`));
+      console.log(`\n  ${keep} item${keep === 1 ? '' : 's'} would stay in the bag. Nothing sold yet —`);
+      console.log(`  confirm with:  /hero sell ${words.join(' ')} --confirm`);
+      return;
+    }
+
+    for (const i of [...picked].reverse()) st.inventory.splice(i, 1);  // descending: earlier indices stay valid
     st.hero.gold += gold;
     S.saveState(st);
-    console.log(`Sold ${item.name} for ${R.fmtGold(gold)}. You have ${R.fmtGold(st.hero.gold)}.`);
+
+    if (sold.length === 1) {
+      console.log(`Sold ${sold[0].name} for ${R.fmtGold(gold)}. You have ${R.fmtGold(st.hero.gold)}.`);
+      return;
+    }
+    console.log(`\n  Sold ${sold.length} items for ${R.fmtGold(gold)}:\n`);
+    sold.forEach(it => console.log(`  ${itemLine(it)} — ${R.fmtGold(value(it))}`));
+    console.log(`\n  Bag ${st.inventory.length}/${B.INVENTORY_CAP} · you have ${R.fmtGold(st.hero.gold)}.`);
   },
 
   stats() {
