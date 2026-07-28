@@ -19,7 +19,7 @@ const fs = require('fs');
 const HERO_GAP = 14;   // cells between hero art and monster art
 const LEFT_MIN = 2;
 
-function main() {
+function main(stdin) {
   const now = Date.now();
   const cols = parseInt(process.env.COLUMNS, 10) || 80;
 
@@ -30,7 +30,17 @@ function main() {
   const sprites = require('../lib/sprites');
   const B = require('../lib/balance');
 
-  try { S.tryFold(now); } catch (_) { /* render last saved state */ }
+  // stdin was previously ignored entirely. It carries the working directory,
+  // which is what makes this the poller for pushes made outside Claude's tools
+  // — with `!`, in another terminal, or from an IDE. This process runs about
+  // once a second, so a push shows up within a frame of happening.
+  let cwd = process.cwd();
+  try {
+    const j = JSON.parse(stdin);
+    cwd = (j.workspace && (j.workspace.current_dir || j.workspace.project_dir)) || j.cwd || cwd;
+  } catch (_) { /* no payload, or not JSON: our own cwd is a fair guess */ }
+
+  try { S.tryFold(now, { cwd }); } catch (_) { /* render last saved state */ }
 
   const state = S.loadState();
   if (!state) {
@@ -199,8 +209,14 @@ function main() {
 
 // stdin may or may not arrive; render on end, but don't hang waiting forever.
 let done = false;
-function go() { if (!done) { done = true; try { main(); } catch (_) { console.log('⚔ …'); } process.exit(0); } }
-process.stdin.on('data', () => {});
+const chunks = [];
+function go() {
+  if (done) return;
+  done = true;
+  try { main(Buffer.concat(chunks).toString()); } catch (_) { console.log('⚔ …'); }
+  process.exit(0);
+}
+process.stdin.on('data', d => chunks.push(d));
 process.stdin.on('end', go);
 process.stdin.on('error', go);
 setTimeout(go, 200);

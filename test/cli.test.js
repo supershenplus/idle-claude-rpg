@@ -180,7 +180,10 @@ test('insight explains itself below the cap instead of erroring', () => {
 test('shop lists a full rotating shelf and buying charges the listed price', () => {
   const st0 = seed();
   const out = run('shop');
-  assert.match(out, /restocks in \d+h \d+m/, 'no restock countdown on the shelf');
+  // The hours part is omitted inside the last hour of a 4-hour window, so
+  // demanding `\d+h \d+m` failed for one hour in every four — a flake that only
+  // ever showed up for whoever happened to run the suite in that window.
+  assert.match(out, /restocks in (\d+h )?\d+m/, 'no restock countdown on the shelf');
   const listed = out.split('\n').filter(l => /^\s+\d+\. \[/.test(l));
   assert.strictEqual(listed.length, SHOP.STOCK_SIZE, `shelf listed ${listed.length} offers`);
 

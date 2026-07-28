@@ -21,6 +21,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const SKILL = require('../lib/skill');
 
 const REPO = path.resolve(__dirname, '..');
 const HOOK_JS = path.join(REPO, 'hooks', 'rpg-hook.js');
@@ -275,10 +276,16 @@ function doCheck() {
   const major = Number(process.versions.node.split('.')[0]);
   major >= 18 ? ok(`node ${process.version}`) : no(`node ${process.version} — need >= 18`);
 
+  // Compared against the *rendered* skill, not the template: the checked-in
+  // file still has {{REPO}} in it, so comparing raw would report every correct
+  // install as stale.
   if (!fs.existsSync(SKILL_DST)) no(`/hero skill missing — run ./install.sh`);
-  else if (fs.readFileSync(SKILL_DST, 'utf8') !== fs.readFileSync(path.join(REPO, 'skill', 'SKILL.md'), 'utf8'))
-    hm(`/hero skill at ${SKILL_DST} differs from this clone — re-run ./install.sh`);
-  else ok('/hero skill installed');
+  else {
+    const live = fs.readFileSync(SKILL_DST, 'utf8');
+    if (live.includes('{{REPO}}')) no(`/hero skill at ${SKILL_DST} was copied unrendered — re-run ./install.sh`);
+    else if (live !== SKILL.render()) hm(`/hero skill at ${SKILL_DST} points at a different clone or is out of date — re-run ./install.sh`);
+    else ok('/hero skill installed');
+  }
 
   const s = readSettings();
   if (!s.exists) {
@@ -323,16 +330,33 @@ function doCheck() {
   return bad ? 1 : 0;
 }
 
+// Render the /hero skill into place, diff-printing when it changes an existing
+// install. Lives here rather than as a `cp` in install.sh because the file has
+// to be templated, and a bash sed pipeline is a worse place to get that wrong.
+function doSkill() {
+  const rendered = SKILL.render();
+  fs.mkdirSync(path.dirname(SKILL_DST), { recursive: true });
+  if (fs.existsSync(SKILL_DST)) {
+    const live = fs.readFileSync(SKILL_DST, 'utf8');
+    if (live === rendered) { console.log(`ok: /hero skill already current at ${SKILL_DST}`); return 0; }
+    console.log(`updating ${SKILL_DST} (was ${live.includes('{{REPO}}') ? 'unrendered' : 'a different clone or version'})`);
+  }
+  fs.writeFileSync(SKILL_DST, rendered);
+  console.log(`ok: /hero skill installed at ${SKILL_DST}`);
+  return 0;
+}
+
 const [, , sub, ...rest] = process.argv;
 const force = rest.includes('--force');
 let code = 0;
 switch (sub) {
   case 'print': console.log(snippet()); break;
+  case 'skill': code = doSkill(); break;
   case 'merge': code = doMerge(force); break;
   case 'remove': code = doRemove(); break;
   case 'check': code = doCheck(); break;
   default:
-    console.error('usage: settings.js print | merge [--force] | remove | check');
+    console.error('usage: settings.js print | merge [--force] | remove | check | skill');
     code = 2;
 }
 process.exit(code);

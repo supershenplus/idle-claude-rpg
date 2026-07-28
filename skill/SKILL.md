@@ -1,12 +1,12 @@
 ---
 name: hero
 description: idle-claude-rpg controls — init, status, shop, zone, inventory, equip, upgrade, sell, stats. Use when the user types /hero or asks about their idle RPG hero, their loot, or the monster in the statusline.
-allowed-tools: Bash(node /Users/eva0012/Projects/idle-claude-rpg/bin/rpg.js *)
+allowed-tools: Bash(node {{REPO}}/bin/rpg.js *)
 ---
 
 # /hero — idle-claude-rpg control panel
 
-The game CLI lives at `/Users/eva0012/Projects/idle-claude-rpg/bin/rpg.js`.
+The game CLI lives at `{{REPO}}/bin/rpg.js`.
 Map the user's arguments directly onto it:
 
 - `/hero` (no args) → `node <cli> status`
@@ -15,6 +15,14 @@ Map the user's arguments directly onto it:
 - Bulk equipping: `/hero equip all` fills every *empty* slot with the best item in the bag
   that fits. Run it immediately, no `--confirm` and no preview — it only ever adds gear,
   so unlike bulk selling there is nothing to lose by getting it wrong.
+- `/hero equip best` is `equip all` with the gloves off: it also **displaces** anything the
+  bag beats, and fills empty slots too, so it is a superset. Also immediate, no `--confirm` —
+  displaced gear goes to the bag, never sold, so the worst case is one `equip <n>` to undo.
+  Prefer it whenever the player wants to "gear up" generally; `equip all` is only right when
+  they specifically ask not to disturb what they're wearing.
+- `/hero status` may end with a `↑` nudge line — either "N slots in your bag beat what you're
+  wearing" or worn ilvl vs the zone's trash. Relay it with the rest of the output; it's the
+  only thing in the game that catches a hero quietly rotting behind the zone.
 - The shop restocks every 4 hours, so `/hero shop` is worth re-running. If a buy comes back
   saying the shelf restocked, nothing was bought — relay the new shelf and ask before re-buying,
   since the numbered offers have changed.
@@ -32,6 +40,12 @@ Map the user's arguments directly onto it:
   (it shows the ATK/DEF/HP the spend would actually buy, and warns when the gain
   rounds to nothing), then re-run with `--confirm` once the user says yes.
   Upgrades apply to *worn* gear only and are never refunded when you sell.
+- Insight (post-cap paragon, level 60+): `/hero insight` shows the board — three tracks,
+  `atk` / `gold` / `drop`. `/hero insight <track>` buys one point immediately, no preview.
+  `/hero insight <track> max` is **two steps like bulk selling**: run it without `--confirm`,
+  relay the preview, then re-run with `--confirm`. Insight is never reset and never refunded,
+  and nothing about paragon touches level, gear, gold or zone — say so if the user worries
+  that hitting the cap costs them anything.
 - `/hero reset` → warn that this deletes the hero, and only run with `--confirm` after the user confirms
 
 ## First-run init

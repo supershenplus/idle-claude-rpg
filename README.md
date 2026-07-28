@@ -258,6 +258,25 @@ Monsters fight back: every attack you land has a ~30% chance of a counter-swing
 (shown as `↩-7` flying back at you), so damage no longer depends on you fumbling
 a command.
 
+### The War Horn is detected from git, not from the hook
+
+Everything else in that table is classified from a hook payload, which means it
+only ever sees what **Claude** ran. A push you type yourself with the `!` prefix,
+make in a second terminal, or make from an IDE fires no hook at all — so the
+headline feature silently never happened for anyone whose workflow pushes that
+way. That is not hypothetical: it shipped like that, and was found by noticing
+`counters.pushes: 0` in a save with 17 commits and three real pushes behind it.
+
+So pushes are read out of the repository instead. Each fold checks whether the
+remote-tracking ref moved **and now equals local HEAD** — the second half is what
+separates a push from a fetch, since fetching someone else's work also advances
+`origin/main`, but to a commit you don't have. A push is a fact about the repo
+rather than about who typed it, so every route into one now counts.
+
+The hook and the statusline both poll, and both share one recorded SHA per repo
+in the save, so whichever notices first fires and the other sees no change.
+That shared record is the whole dedup story — no time windows to tune.
+
 **Death is punctuation, and it lives at bosses.** Trash costs a properly equipped
 hero well under 3% of max HP per kill against 1%/min passive regen, so grinding
 keeps your bar full and only an under-geared hero feels it — which is the game
@@ -280,7 +299,7 @@ literally immune, while an under-geared one ate the entire curve.)
 ## Dev
 
 ```sh
-node --test 'test/*.test.js'      # 117 tests incl. concurrency stress
+node --test 'test/*.test.js'      # 141 tests incl. concurrency stress
 node test/sim.js --days 90        # replay synthetic days through the engine
 node test/sim.js --assert         # balance gates, across all three equip profiles
 node bin/demo.js --list           # HUD scenes, for screenshots and layout work
