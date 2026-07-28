@@ -114,7 +114,7 @@ Instructions note these merge into the existing `hooks` object (PreToolUse/Sessi
 
 ## Edge cases
 
-Corrupt state → rename to `state.corrupt-<ts>.json`, restore from bak, else first-run prompt (keep max 3 corrupt files). Inbox >512KB → fold in chunks. Anim queue cap 10, never schedule >30s ahead. Hook: single top-level try/catch → exit 0, no stderr. Level cap: XP shows `MAX`, kills still drop loot (prestige = v2).
+Corrupt state → rename to `state.corrupt-<ts>.json`, restore from bak, else first-run prompt (keep max 3 corrupt files). Inbox >512KB → fold in chunks. Anim queue cap 10, never schedule >30s ahead. Hook: single top-level try/catch → exit 0, no stderr. Level cap: XP banks into Insight (paragon, v1.7) rather than being discarded, kills still drop loot. Deliberately not a prestige reset — level, gear, gold and zone are never touched.
 
 ## Build order
 

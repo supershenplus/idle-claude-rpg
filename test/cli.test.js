@@ -149,6 +149,34 @@ test('the dead ends of equip all point at equip best when it would help', () => 
   assert.doesNotMatch(out, /equip best/, 'nudged toward a command that would do nothing');
 });
 
+// Insight is the one currency you cannot farm back in an afternoon, so `max`
+// gets the same two-step the gold sinks get: a preview that spends nothing.
+test('insight max previews before it spends, and only spends on --confirm', () => {
+  seed(st => { st.hero.level = B.LEVEL_CAP; st.hero.insight = 10; });
+
+  const preview = run('insight', 'gold', 'max');
+  assert.match(preview, /Nothing spent yet/);
+  assert.strictEqual(S.loadState().hero.insight, 10, 'the preview spent insight');
+  assert.strictEqual(E.paragonPoints(S.loadState(), 'gold'), 0, 'the preview moved the track');
+
+  run('insight', 'gold', 'max', '--confirm');
+  const st = S.loadState();
+  assert.ok(E.paragonPoints(st, 'gold') > 0, 'confirming bought nothing');
+  assert.ok(st.hero.insight < 10, 'confirming charged nothing');
+
+  // A single point is a small purchase and goes through immediately.
+  const before = E.paragonPoints(S.loadState(), 'atk');
+  run('insight', 'atk');
+  assert.strictEqual(E.paragonPoints(S.loadState(), 'atk'), before + 1);
+});
+
+test('insight explains itself below the cap instead of erroring', () => {
+  seed(st => { st.hero.level = 5; st.hero.insight = 0; st.hero.capXp = 0; });
+  const out = run('insight');
+  assert.match(out, new RegExp(`past level ${B.LEVEL_CAP}`));
+  assert.doesNotMatch(out, /NaN|undefined/);
+});
+
 test('shop lists a full rotating shelf and buying charges the listed price', () => {
   const st0 = seed();
   const out = run('shop');

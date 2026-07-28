@@ -122,6 +122,94 @@ function equipBest(st) {
   console.log(`  Bag ${st.inventory.length}/${B.INVENTORY_CAP} — displaced gear is in it, not sold.`);
 }
 
+// The cap line: what you have, and how close the next point is.
+function insightLine(h) {
+  const banked = h.capXp || 0;
+  const togo = B.INSIGHT_XP - banked;
+  return `MAX · Insight ${h.insight || 0} (+${togo.toLocaleString('en-US')} xp to next)`;
+}
+
+// `/hero insight` — the paragon board. Buying one point is a small, immediate
+// purchase like `upgrade <slot>`; `max` pours in everything affordable and is
+// two-step like bulk selling, because it can empty a currency you cannot farm
+// back quickly.
+function insightBoard(st) {
+  const h = st.hero;
+  if (h.level < B.LEVEL_CAP && !(h.insight || h.capXp)) {
+    console.log(`Insight is earned past level ${B.LEVEL_CAP} — you're level ${h.level}.`
+      + ` Every point of XP you earn at the cap banks toward it instead of being discarded.`);
+    return;
+  }
+
+  const togo = (B.INSIGHT_XP - (h.capXp || 0)).toLocaleString('en-US');
+  console.log(`\n  Insight ${h.insight || 0} unspent · +${togo} xp to the next`
+    + ` · ${st.counters.insightEarned || 0} earned all told\n`);
+
+  for (const t of B.INSIGHT_TRACKS) {
+    const pts = E.paragonPoints(st, t.id);
+    const pct = Math.round((B.insightMult(t.id, pts) - 1) * 100);
+    const cost = B.insightCost(pts);
+    const tail = pts >= B.INSIGHT_TRACK_MAX
+      ? R.c('dim', 'maxed')
+      : `next +1 costs ${cost}${(h.insight || 0) >= cost ? '' : R.c('dim', ' — not yet')}`;
+    console.log(`  ${t.id.padEnd(6)} ${String(pts).padStart(2)}/${B.INSIGHT_TRACK_MAX}`
+      + `  +${pct}% ${t.of.padEnd(14)} ${tail}`);
+  }
+  console.log(`\n  ${B.INSIGHT_XP.toLocaleString('en-US')} xp per point. Gear, level and zone are never reset.`);
+  console.log('  /hero insight <track> · /hero insight <track> max');
+}
+
+function insightBuy(st, id, all) {
+  const t = B.insightTrack(id);
+  if (!t) {
+    console.log(`Unknown track "${id}". One of: ${B.INSIGHT_TRACKS.map(x => x.id).join(', ')}.`);
+    process.exit(1);
+  }
+
+  if (!all) {
+    const r = E.spendInsight(st, id);
+    if (!r.ok) {
+      console.log(r.why === 'maxed'
+        ? `${id} is already at ${B.INSIGHT_TRACK_MAX}/${B.INSIGHT_TRACK_MAX}.`
+        : `Not enough Insight — ${id} costs ${r.cost}, you have ${r.have}.`);
+      process.exit(1);
+    }
+    E.tick(st, `insight → ${id} ${r.points}`);
+    S.saveState(st);
+    console.log(`${id} ${r.points - 1} → ${r.points} for ${r.cost} Insight`
+      + ` (+${Math.round((B.insightMult(id, r.points) - 1) * 100)}% ${t.of}).`
+      + ` ${st.hero.insight} left.`);
+    return;
+  }
+
+  // Count what the spend would buy without spending it, so the preview and the
+  // purchase can't disagree — same reasoning as previewAutoEquip.
+  let pts = E.paragonPoints(st, id), have = st.hero.insight || 0, spend = 0, bought = 0;
+  while (pts < B.INSIGHT_TRACK_MAX && have >= B.insightCost(pts)) {
+    const c = B.insightCost(pts);
+    have -= c; spend += c; pts += 1; bought += 1;
+  }
+  if (!bought) {
+    console.log(pts >= B.INSIGHT_TRACK_MAX
+      ? `${id} is already at ${B.INSIGHT_TRACK_MAX}/${B.INSIGHT_TRACK_MAX}.`
+      : `Not enough Insight — the next ${id} point costs ${B.insightCost(pts)}, you have ${st.hero.insight || 0}.`);
+    return;
+  }
+
+  const from = E.paragonPoints(st, id);
+  const gain = Math.round((B.insightMult(id, pts) - B.insightMult(id, from)) * 100);
+  if (!flag('confirm')) {
+    console.log(`\n  ${id}: ${from} → ${pts} for ${spend} Insight, leaving ${have}.`);
+    console.log(`  That buys +${gain}% ${t.of} (now +${Math.round((B.insightMult(id, pts) - 1) * 100)}% total).`);
+    console.log(`\n  Nothing spent yet — confirm with:  /hero insight ${id} max --confirm`);
+    return;
+  }
+  for (let i = 0; i < bought; i++) E.spendInsight(st, id);
+  E.tick(st, `insight → ${id} ${pts}`);
+  S.saveState(st);
+  console.log(`${id} ${from} → ${pts} for ${spend} Insight (+${gain}% ${t.of}). ${st.hero.insight} left.`);
+}
+
 const commands = {
 
   init() {
@@ -153,7 +241,10 @@ const commands = {
     const h = st.hero, m = st.monster, c = C.classes[h.class], zone = C.zoneById(h.zone);
     const xpNeed = h.level >= B.LEVEL_CAP ? 0 : B.xpToNext(h.level);
     console.log(`\n  ${sprites.heroes[h.class].idle}  ${h.name} the ${c.name} — Level ${h.level}`);
-    console.log(`  XP    ${h.level >= B.LEVEL_CAP ? 'MAX' : `${h.xp}/${xpNeed} [${R.bar(h.xp, xpNeed, 20)}]`}`);
+    // At the cap the XP bar has nothing left to fill, so the line reports the
+    // Insight the same XP is now banking instead — otherwise a capped hero reads
+    // as a hero whose numbers have stopped moving.
+    console.log(`  XP    ${h.level >= B.LEVEL_CAP ? insightLine(h) : `${h.xp}/${xpNeed} [${R.bar(h.xp, xpNeed, 20)}]`}`);
     console.log(`  HP    ${h.hp}/${h.maxHp}   ATK ${Math.round(E.heroAtk(st))}   DEF ${E.heroDef(st)}   Gold ${R.fmtGold(h.gold)}`);
     console.log(`  Zone  ${zone.name} (${zone.min}-${zone.max})`);
 
@@ -472,6 +563,13 @@ const commands = {
       + `ATK ${Math.round(E.heroAtk(st))}  DEF ${E.heroDef(st)}  HP ${st.hero.hp}/${st.hero.maxHp} · ${R.fmtGold(st.hero.gold)} left.`);
   },
 
+  insight() {
+    const st = requireSave();
+    const word = String(args[0] || '').toLowerCase();
+    if (!word) return insightBoard(st);
+    return insightBuy(st, word, String(args[1] || '').toLowerCase() === 'max');
+  },
+
   stats() {
     const st = requireSave();
     const c = st.counters;
@@ -480,6 +578,7 @@ const commands = {
     console.log(`  kills ${c.kills} (${c.bossKills} bosses)  deaths ${c.deaths}`);
     console.log(`  commits ${c.commits}  pushes ${c.pushes}  tests ${c.testsPassed}✓/${c.testsFailed}✗`);
     console.log(`  lines of code ${c.linesWritten.toLocaleString('en-US')}  gold earned ${R.fmtGold(c.goldEarned)}`);
+    if (c.insightEarned) console.log(`  insight earned ${c.insightEarned} (${st.hero.insight || 0} unspent) — /hero insight`);
   },
 
   fold() {
@@ -504,7 +603,7 @@ const commands = {
 
 const fn = commands[cmd];
 if (!fn) {
-  console.log('idle-claude-rpg — commands: init status zone shop inventory equip upgrade sell stats fold sim reset');
+  console.log('idle-claude-rpg — commands: init status zone shop inventory equip upgrade insight sell stats fold sim reset');
   process.exit(cmd ? 1 : 0);
 }
 fn();

@@ -49,8 +49,12 @@ function main() {
 
   // ---- line 1: identity / vitals ----
   const xpNeed = h.level >= B.LEVEL_CAP ? 0 : B.xpToNext(h.level);
+  // At the cap this used to read a flat `MAX` forever. The same XP now banks
+  // Insight, so the bar keeps filling and the number keeps climbing — which is
+  // the entire point of the paragon track. Still narrower than the pre-cap
+  // `[bar] 1,234/4,567` it replaces, so no line gets longer than it already was.
   const xpStr = h.level >= B.LEVEL_CAP
-    ? R.c('brightYellow', 'MAX')
+    ? `${R.c('cyan', `[${R.bar(h.capXp || 0, B.INSIGHT_XP, 10)}]`)} ${R.c('brightYellow', `✦${h.insight || 0}`)}`
     : `${R.c('cyan', `[${R.bar(h.xp, xpNeed, 10)}]`)} ${R.fmt(h.xp)}/${R.fmt(xpNeed)}`;
   let badge = '';
   try { if (fs.existsSync(P.bigmodeFlag)) badge = ' ' + R.c('brightMagenta', '◆BM'); } catch (_) {}
