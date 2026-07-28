@@ -469,6 +469,26 @@ never runs under `node --test`.
 - [ ] One-line sprites in `lib/content.js` are still the original kaomoji — only
       the 5-row big art was redrawn in v1.2, so compact and mini HUD modes never
       got the pass
+- [ ] **Monsters don't react to being hit.** The hero side of a blow is now
+      scripted frame by frame — `sprites.attacks` gives the ranger a release
+      pose, a 3-cell recoil and an arrow that crosses the gap — and the monster
+      just stands there through all of it. The only thing on screen that says
+      the shot connected is the `✦-N` in the gap and the HP bar under the
+      nameplate, so a landed hit and a whiffed one look identical. The impact
+      frame is already known (`sprites.hitFrame(cls)`), so the timing is free;
+      what's open is what a flinch *is*. Roughly in order of cost:
+      (a) shove the whole sprite right a couple of cells on the impact frame —
+      the exact mirror of the hero's recoil, one transform, works for all 28
+      monsters and needs no new art; (b) flash the sprite (dim, or red) for one
+      frame, which is the only option that also reads in the compact HUD where
+      there is one row and no room to move; (c) hand-drawn hurt art, which only
+      pays for itself on the six bosses. (a) and (b) compose and are probably
+      the whole feature. Two things to watch: a knockback needs the same
+      reserved-room treatment `MAX_RECOIL` got for the hero, but against the
+      *right* edge, where the binding constraint is `R.fit` truncating the line
+      rather than column 0; and it must not fight the corpse path — `kill` and
+      `bossdown` already swap in `DEAD_MONSTER_BIG` and pin `anim.data.mon`, so
+      the flinch has to end where the death begins
 - [ ] **Why does the Grove shop stock gear that isn't worth buying?** A real
       shelf, rolled live at level 8 with 2,494g in hand and the boss at full HP —
       of five offers, *two* were non-purchases and one was marginal:

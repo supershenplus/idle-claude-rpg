@@ -142,6 +142,12 @@ function main(stdin) {
     return `${lvl}  ${nm}   ${hp}`;
   }
 
+  // A class may script its attack (see sprites.attacks): a pose to hold, a
+  // recoil, and where its projectile has got to this frame. Classes without one
+  // get `null` here and keep the generic mark that grows out of the gap.
+  const atk = anim && anim.type === 'hit' ? sprites.attackFrame(h.class, frame) : null;
+  const recoil = atk ? atk.back : 0;
+
   // Projectile + damage numbers that live in the gap between the combatants.
   //
   // `cells` is how much room the gap actually has. It matters because a burst of
@@ -155,23 +161,38 @@ function main(stdin) {
   // and drop to `fmt` when they don't, rather than truncating to `✦-1234567…`,
   // which reads as a broken renderer instead of a big hit. R.fit sits under both
   // so no future format can reach past the gap either.
+  //
+  // A scripted attack additionally moves the projectile: `flightCol` is how far
+  // into the gap the mark starts, so the arrow crosses the gap over the shot
+  // instead of stalling three cells out of the bow. The trail follows the head
+  // rather than reaching back to the bow, and the whole mark still ends inside
+  // `cells`, so the monster stays in column either way.
   function gapMarks(cells) {
-    if (!anim || anim.type !== 'hit') return { flight: '', dmg: '', counter: '' };
+    if (!anim || anim.type !== 'hit') return { flight: '', flightCol: 0, dmg: '', counter: '' };
     const d = anim.data;
-    const travel = Math.min(HERO_GAP - 4, frame * 3);
-    const flight = R.fit(heroArt.trail.repeat(Math.min(3, travel + 1)) + heroArt.proj, cells);
+    let flightCol = 0;
+    let flight = '';
+    if (!atk) {
+      const travel = Math.min(HERO_GAP - 4, frame * 3);
+      flight = R.fit(heroArt.trail.repeat(Math.min(3, travel + 1)) + heroArt.proj, cells);
+    } else if (atk.fly != null) {
+      const head = Math.round(atk.fly * Math.max(0, cells - 1));
+      const tail = Math.min(3, head);
+      flightCol = head - tail;
+      flight = R.fit(heroArt.trail.repeat(tail) + heroArt.proj, cells - flightCol);
+    }
     const num = (n, room) => {
       const exact = String(Math.max(0, Math.round(n || 0)));
       return exact.length <= room ? exact : R.fmt(Math.max(0, n || 0));
     };
-    const dmg = frame >= 2
+    const dmg = frame >= sprites.hitFrame(h.class)
       ? R.c(d.crit ? 'brightRed' : 'brightYellow',
         R.fit(`✦-${num(d.dmg, cells - (d.crit ? 3 : 2))}${d.crit ? '!' : ''}`, cells))
       : '';
     const counter = d.counter
       ? R.c('brightRed', R.fit(`↩-${num(d.counter, cells - 2)}`, cells))
       : '';
-    return { flight, dmg, counter, travel };
+    return { flight, flightCol, dmg, counter };
   }
 
   let out;
@@ -184,8 +205,14 @@ function main(stdin) {
     // marks start a column in from the hero and stop a column short of the
     // monster.
     const g = gapMarks(HERO_GAP - 2);
+    // Compact has one row and no pose art, so the recoil is all it takes from a
+    // scripted attack. It ignores `flightCol` deliberately — the projectile and
+    // the damage number share this row, so a head that crossed the gap would
+    // shove the number off the end of it — and the lengthening trail carries the
+    // shot instead.
     const scene = R.row()
-      .put(heroArt.idle, Math.max(LEFT_MIN, monLeft - HERO_GAP - R.width(heroArt.idle)))
+      .put(heroArt.idle,
+        Math.max(0, Math.max(LEFT_MIN, monLeft - HERO_GAP - R.width(heroArt.idle)) - recoil))
       .put(R.fit(g.flight + (g.dmg ? ' ' + g.dmg : ''), HERO_GAP - 2),
         Math.max(LEFT_MIN, monLeft - HERO_GAP + 1))
       .put(monster, monLeft)
@@ -196,13 +223,24 @@ function main(stdin) {
     const monArt = dead
       ? sprites.DEAD_MONSTER_BIG
       : sprites.bigMonster(mon.id, mon.sprite);
-    const heroBig = sprites.bigHero(h.class);
+    const heroBig = (atk && atk.art) || sprites.bigHero(h.class);
     const monW = Math.max(...monArt.map(R.width));
-    const heroW = Math.max(...heroBig.map(R.width));
+    // The block the hero is centred in is the *idle* art's, not this frame's:
+    // a pose that happened to be a cell narrower would otherwise re-centre every
+    // row and make the whole sprite twitch on the frame it was held.
+    const heroW = Math.max(...sprites.bigHero(h.class).map(R.width));
     const mid = Math.floor(cols / 2);
-    const monLeft = Math.max(LEFT_MIN + heroW + HERO_GAP, Math.round(mid - monW / 2));
-    const heroLeft = Math.max(LEFT_MIN, monLeft - HERO_GAP - heroW);
-    const gapLeft = heroLeft + heroW + 2;
+    // MAX_RECOIL is reserved to the hero's left at every width. Clamping the
+    // flinch instead would make it fade out as the terminal narrowed — and the
+    // clamp binds exactly at the widths where the scene is already tightest.
+    const monLeft = Math.max(LEFT_MIN + sprites.MAX_RECOIL + heroW + HERO_GAP,
+      Math.round(mid - monW / 2));
+    const heroHome = Math.max(LEFT_MIN, monLeft - HERO_GAP - heroW);
+    const heroLeft = Math.max(0, heroHome - recoil);
+    // Anchored to where the hero stands, not to where it has been shoved: the
+    // arrow has already left the bow, and marks that slid back with the recoil
+    // would drag the damage number along with them.
+    const gapLeft = heroHome + heroW + 2;
     // Derived from the layout rather than written down: the widest mark starts
     // at gapLeft + 1 and has to stop a column short of the monster art.
     const g = gapMarks(monLeft - gapLeft - 2);
@@ -219,7 +257,7 @@ function main(stdin) {
       const mLine = monArt[i] || '';
       const r = R.row().put(hLine, heroLeft + Math.round((heroW - R.width(hLine)) / 2));
       if (i === waist - 1 && g.counter) r.put(g.counter, gapLeft + 2);
-      if (i === waist && g.flight) r.put(g.flight, gapLeft);
+      if (i === waist && g.flight) r.put(g.flight, gapLeft + g.flightCol);
       if (i === waist + 1 && g.dmg) r.put(g.dmg, gapLeft + 1);
       r.put(mLine, monLeft + Math.round((monW - R.width(mLine)) / 2));
       art.push(r.toString());

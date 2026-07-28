@@ -116,12 +116,12 @@ test('ranger bow limbs bulge symmetrically toward the target', () => {
 // already started. `engine.resolveKill` spawns the replacement immediately, so
 // every frame of the killing blow and the death that follows it would otherwise
 // be drawn against whatever monster happened to be standing there next.
-function renderAnim(cols, build) {
+function renderAnim(cols, build, mode) {
   const st = E.newState('ranger', 'Testfixture', Date.now());
   build(st, Date.now());
   S.saveState(st);
   return execFileSync('node', [CLI], {
-    env: { ...process.env, COLUMNS: String(cols), IDLE_RPG_HOME: HOME },
+    env: { ...process.env, COLUMNS: String(cols), IDLE_RPG_HOME: HOME, RPG_HUD: mode || '' },
     input: '{}', encoding: 'utf8',
   });
 }
@@ -193,6 +193,67 @@ test('an ordinary hit draws the projectile and both damage marks', () => {
   assert.ok(out.includes('✦-38!'), 'the damage number and its crit mark are missing');
   assert.ok(out.includes('↩-7'), 'the counter-hit mark is missing');
   assert.ok(out.includes(sprites.heroes.ranger.proj), 'the projectile never left the bow');
+});
+
+// ---- the ranger's scripted shot ----
+//
+// The recoil is the one part of the scene that moves the hero rather than the
+// marks, so it is also the one part that a narrow terminal can quietly eat: the
+// hero sits near the left edge by construction, and a flinch that ran into it
+// would just be clamped away. These pin the displacement against the script
+// itself, so it has to be real at every width rather than merely plausible.
+
+// The ranger's grip row, which survives every pose — and the pose art is padded
+// so it starts in the same column as the idle art's.
+const BOW = '▚░▒██▓▬';
+const SCRIPT = sprites.attacks.ranger.frames;
+
+function columnOf(out, needle) {
+  const line = out.split('\n').map(R.visible).find(l => l.includes(needle));
+  assert.ok(line, `${JSON.stringify(needle)} is not on screen`);
+  return R.width(line.slice(0, line.indexOf(needle)));
+}
+
+function atFrame(cols, frame) {
+  return renderAnim(cols, (st, now) => {
+    st.monster = { ...BOSS };
+    st.anim = [{ type: 'hit', at: now - frame * sprites.FRAME_MS, dur: 1500,
+      data: { dmg: 38, crit: false, counter: 0 } }];
+  }, 'big');
+}
+
+// 100 is the roomy case and 76 the narrowest width that picks the big HUD on its
+// own — but neither reaches the left edge, so neither would notice the reserved
+// room going missing. 60 is a width only `RPG_HUD=big` can reach, and there the
+// scene is clamped hard against column 0: it is the case the reserve exists for.
+for (const cols of [100, 76, 60]) {
+  test(`the shot shoves the ranger back and lets it recover at ${cols} columns`, () => {
+    // Frame 0 is the nocked bow — the hero's home column.
+    const home = columnOf(atFrame(cols, 0), BOW);
+    const moved = SCRIPT.map((_, i) => home - columnOf(atFrame(cols, i), BOW));
+    assert.deepStrictEqual(moved, SCRIPT.map(f => f.back),
+      `recoil does not match the script — clamped against the left edge at ${cols} columns?`);
+    assert.strictEqual(moved[moved.length - 1], 0, 'the ranger never returns to its mark');
+  });
+}
+
+test('the arrow crosses the gap instead of stalling out of the bow', () => {
+  const flown = SCRIPT
+    .map((f, i) => (f.fly == null ? null : columnOf(atFrame(100, i), sprites.heroes.ranger.proj)))
+    .filter(x => x != null);
+  assert.ok(flown.length >= 3, 'the arrow is barely in flight at all');
+  for (let i = 1; i < flown.length; i++) {
+    assert.ok(flown[i] >= flown[i - 1], `the arrow flew backwards: ${flown}`);
+  }
+  assert.ok(flown[flown.length - 1] > flown[0] + 4,
+    `the arrow travels only ${flown[flown.length - 1] - flown[0]} cells: ${flown}`);
+});
+
+test('the damage number waits for the arrow to land', () => {
+  const landed = sprites.hitFrame('ranger');
+  assert.doesNotMatch(atFrame(100, landed - 1), /✦-/,
+    'the damage is counted while the arrow is still in the air');
+  assert.match(atFrame(100, landed), /✦-38/, 'the arrow landed without a damage number');
 });
 
 test('a coalesced hit cannot shear the monster sprite', () => {

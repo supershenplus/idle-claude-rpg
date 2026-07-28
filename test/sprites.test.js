@@ -70,6 +70,66 @@ test('every monster and boss in content.js has big art', () => {
   }
 });
 
+// Attack poses are swapped in for the idle art mid-animation, so they live or
+// die on lining up with it. The renderer centres each row inside the hero's
+// block; a pose row narrower than the block would be nudged by half the
+// difference and the sprite would slide sideways on the frame it was held —
+// which reads as the artist's fault rather than the renderer's. Padding every
+// row to the full block width is what makes that centring a no-op, so that is
+// what gets pinned here.
+function poses() {
+  const out = [];
+  for (const [cls, byName] of Object.entries(S.heroPoses)) {
+    for (const [name, art] of Object.entries(byName)) out.push([`${cls}/${name}`, cls, art]);
+  }
+  return out;
+}
+
+test('every attack pose matches the shape of its class idle art', () => {
+  for (const [label, cls, art] of poses()) {
+    assert.ok(S.heroesBig[cls], `${label}: pose for a class with no idle art`);
+    const block = Math.max(...S.heroesBig[cls].map(R.width));
+    assert.strictEqual(art.length, S.BIG_ROWS, `${label}: wrong row count`);
+    art.forEach((line, i) => {
+      assert.strictEqual(R.width(line), block,
+        `${label} row ${i}: ${R.width(line)} cells, must be padded to the ${block}-cell block`);
+      for (const ch of line) {
+        const cp = ch.codePointAt(0);
+        assert.strictEqual(R.charWidth(cp), 1,
+          `${label} row ${i}: ${JSON.stringify(ch)} (U+${cp.toString(16)}) is not 1 cell wide`);
+      }
+    });
+  }
+});
+
+test('the ranger release pose has loosed its arrow', () => {
+  const drawn = S.heroesBig.ranger.join('\n');
+  const loosed = S.heroPoses.ranger.release.join('\n');
+  for (const ch of ['┼', '▶']) {
+    assert.ok(drawn.includes(ch), `the idle bow is missing ${ch} — the nocked arrow is gone`);
+    assert.ok(!loosed.includes(ch), `${ch} is still on the string after the shot`);
+  }
+});
+
+test('every scripted attack frame names a pose its class actually has', () => {
+  for (const [cls, a] of Object.entries(S.attacks)) {
+    assert.ok(S.heroesBig[cls], `${cls}: attack script for an unknown class`);
+    assert.ok(a.frames.length > 0, `${cls}: empty attack script`);
+    for (const [i, f] of a.frames.entries()) {
+      if (f.pose) {
+        assert.ok(S.heroPoses[cls] && S.heroPoses[cls][f.pose],
+          `${cls} frame ${i}: no pose named ${f.pose}`);
+      }
+      assert.ok(f.back >= 0 && f.back <= S.MAX_RECOIL, `${cls} frame ${i}: recoil out of range`);
+      assert.ok(f.fly == null || (f.fly >= 0 && f.fly <= 1), `${cls} frame ${i}: fly out of 0..1`);
+    }
+    assert.ok(a.hitFrame >= 0 && a.hitFrame < a.frames.length,
+      `${cls}: hitFrame ${a.hitFrame} lands outside the script`);
+    assert.strictEqual(a.frames[a.hitFrame].fly, 1,
+      `${cls}: the damage lands on a frame where the projectile has not arrived`);
+  }
+});
+
 test('every class has hero art and a one-line sprite', () => {
   for (const id of Object.keys(C.classes)) {
     assert.ok(S.heroesBig[id], `${id}: no big art`);

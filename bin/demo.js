@@ -83,6 +83,20 @@ const SCENES = {
       return st;
     },
   },
+  // The frame this lands on (FRAME, above) is deliberately one of the two the
+  // ranger spends at full recoil: the shot is the only thing in the HUD that
+  // moves a sprite rather than a mark, and it is on screen for 500ms of a
+  // 1500ms hit, so "run it and wait" almost never catches it.
+  loose: {
+    blurb: 'the ranger mid-shot — bow loosed, arrow crossing, hero shoved back',
+    build: now => {
+      const st = hero(now, { cls: 'ranger', name: 'Nullpointer', level: 27, zone: 'archives', gold: 9400, hpFrac: 0.78 });
+      st.monster = monster('archives', 'inkelem', 27, 0.46);
+      st.anim = [anim('hit', 1500, { dmg: 64, crit: false, counter: 11 }, now)];
+      st.ticker = [R.c('dim', 'Ink Elemental — 64')];
+      return st;
+    },
+  },
   boss: {
     blurb: 'the boss intro marquee (flashes between two reds)',
     build: now => {
