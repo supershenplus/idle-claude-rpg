@@ -116,6 +116,16 @@ const SCENES = {
       return st;
     },
   },
+  dodge: {
+    blurb: 'a counter-swing slipped — the hero leans out of it and ghosts',
+    build: now => {
+      const st = hero(now, { cls: 'ranger', name: 'Nullpointer', level: 29, zone: 'archives', gold: 11200, hpFrac: 0.91 });
+      st.monster = monster('archives', 'unindexed', 30, 0.44);
+      st.anim = [anim('hit', 1500, { dmg: 88, crit: false, dodged: true }, now)];
+      st.ticker = [R.c('dim', 'The Unindexed swung and missed')];
+      return st;
+    },
+  },
   swing: {
     blurb: 'the knight mid-swing — blade come over, cleave crossing the gap',
     build: now => {

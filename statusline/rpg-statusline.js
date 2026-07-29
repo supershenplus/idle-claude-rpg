@@ -176,9 +176,24 @@ function main(stdin) {
   // for the whole of a death. Alternating two reds rather than holding one:
   // the HUD is redrawn about once a second, so a viewer sees isolated frames,
   // and a flat wash would be indistinguishable from a hero who simply is red.
-  const hurt = !!anim && (anim.type === 'death'
-    || (anim.type === 'hit' && anim.data.counter > 0 && frame >= sprites.hitFrame(h.class)));
-  const tint = s => (hurt && s ? R.c(frame % 2 === 0 ? 'brightRed' : 'red', s) : s);
+  const landedOn = anim && anim.type === 'hit' && frame >= sprites.hitFrame(h.class);
+  const hurt = !!anim && (anim.type === 'death' || (landedOn && anim.data.counter > 0));
+
+  // The other half of the same roll: the monster swung and missed. The engine
+  // only ever tags this when nothing landed on that record (`engine.retaliate`),
+  // so the two are mutually exclusive by construction — the ordering below just
+  // makes that impossible to get wrong from here.
+  const dodged = !!landedOn && !!anim.data.dodged;
+
+  // Colour is the channel for what happened *to* the hero: red for a blow taken,
+  // dimmed to an afterimage for one slipped. The sprite carries the motion (the
+  // lean, below) and the gap carries the verdict, so neither has to do both.
+  const tint = s => {
+    if (!s) return s;
+    if (hurt) return R.c(frame % 2 === 0 ? 'brightRed' : 'red', s);
+    if (dodged) return R.c('dim', s);
+    return s;
+  };
 
   // Projectile + damage numbers that live in the gap between the combatants.
   //
@@ -236,9 +251,13 @@ function main(stdin) {
     // so a counter with no attack behind it isn't a state it can reach. The
     // false causality was drawing order alone. Both numbers belong to the moment
     // of impact, so both wait for it.
+    // A dodge takes the counter's slot in the gap, because it is the same slot in
+    // the exchange: what the monster did back. Green against the counter's red,
+    // and worded rather than numbered — a miss has no quantity, and `↩-0` would
+    // read as a counter that did nothing rather than as one that never landed.
     const counter = landed && d.counter
       ? R.c('brightRed', R.fit(`↩-${num(d.counter, cells - 2)}`, cells))
-      : '';
+      : dodged ? R.c('brightGreen', R.fit('↩ dodge', cells)) : '';
     return { flight, flightCol, dmg, counter };
   }
 
@@ -257,9 +276,12 @@ function main(stdin) {
     // the damage number share this row, so a head that crossed the gap would
     // shove the number off the end of it — and the lengthening trail carries the
     // shot instead.
+    // One row of hero can't bend, so compact spends the whole lean on moving it:
+    // the deepest row of DODGE_LEAN is how far the body got out of the way.
+    const lean = dodged ? Math.max(...sprites.DODGE_LEAN) : 0;
     const scene = R.row()
       .put(tint(heroArt.idle),
-        Math.max(0, Math.max(LEFT_MIN, monLeft - HERO_GAP - R.width(heroArt.idle)) - recoil))
+        Math.max(0, Math.max(LEFT_MIN, monLeft - HERO_GAP - R.width(heroArt.idle)) - recoil - lean))
       .put(R.fit(g.flight + (g.dmg ? ' ' + g.dmg : ''), HERO_GAP - 2),
         Math.max(LEFT_MIN, monLeft - HERO_GAP + 1))
       .put(monster, monLeft)
@@ -302,7 +324,13 @@ function main(stdin) {
     for (let i = 0; i < sprites.BIG_ROWS; i++) {
       const hLine = heroBig[i] || '';
       const mLine = monArt[i] || '';
-      const r = R.row().put(tint(hLine), heroLeft + Math.round((heroW - R.width(hLine)) / 2));
+      // The lean is per row, so it is the one displacement that is not shared by
+      // the whole sprite — and it is applied to `heroLeft`, which already has the
+      // script's recoil in it, so a hero shoved back mid-shot leans from wherever
+      // that left it. MAX_RECOIL reserves room for the pair together.
+      const lean = dodged ? (sprites.DODGE_LEAN[i] || 0) : 0;
+      const r = R.row().put(tint(hLine),
+        Math.max(0, heroLeft - lean + Math.round((heroW - R.width(hLine)) / 2)));
       if (i === waist - 1 && g.counter) r.put(g.counter, gapLeft + 2);
       if (i === waist && g.flight) r.put(g.flight, gapLeft + g.flightCol);
       if (i === waist + 1 && g.dmg) r.put(g.dmg, gapLeft + 1);

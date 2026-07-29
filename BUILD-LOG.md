@@ -19,6 +19,40 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### The swings that miss (2026-07-29)
+
+- **A dodge needed something to represent, and the roll was already there.**
+  `retaliate` rolled one number and either countered or returned in silence, so
+  ~70% of hits had no tell at all. The roll is now read three ways: under the
+  threshold the monster connects, in a 20-point band above it it swung and
+  missed, above that it never swung. No new roll, no damage prevented
+- **The band is the whole design decision.** Narrating every non-counter as a
+  dodge was the obvious version and the wrong one — at 70% of hits the hero is
+  perpetually mid-lean and the animation stops meaning anything. A fifth is often
+  enough to see in a session and rare enough to still read as an event, and the
+  silence that remains is honest: most of the time nothing happened
+- **Proven, not asserted, to be free.** The claim that this changes no balance
+  rests entirely on the RNG stream being untouched, so a test pins that
+  `retaliate` draws exactly one number down every branch, and `test/sim.js`
+  prints byte-identical output with the feature on
+- **The dodge is a lean, not a pose.** Per-row displacement — `[2,2,1,0,0]`,
+  deepest at the head, nothing at the feet — applied on top of whatever attack
+  frame the class was already holding. Which means it costs no per-class art and
+  a fifth class cannot forget to draw one. It is also, deliberately, the exact
+  shear every sprite in the file is drawn to avoid: rows coming apart on a
+  gradient reads as a body bending, rows coming apart at random reads as broken
+  art, and the difference is only ever the gradient
+- **Colour carries what happened to you, the gap carries the verdict.** Red wash
+  for a blow taken, dimmed afterimage for one slipped, `↩-7` or `↩ dodge` in the
+  counter's slot. `MAX_RECOIL` now sums the lean onto the script's own recoil
+  over exactly the frames where they can coincide (5 cells, from the wizard),
+  so the deepest case still clears the left edge at 60 columns
+- **Blood beats a dodge on a coalesced record.** A burst folds into one hit anim,
+  so a near miss and a landed counter can reach the same one; a frame showing the
+  hero shrugging off a swing it actually took is a lie. Enforced in the engine
+  and again in the renderer
+- 298 tests green
+
 ### Every class swings, and getting hit shows on the hero (2026-07-28)
 
 - **Three classes were standing still through their own attacks.** The ranger

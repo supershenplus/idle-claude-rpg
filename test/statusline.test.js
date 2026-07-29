@@ -391,6 +391,109 @@ test('the compact HUD flashes too', () => {
   assert.doesNotMatch(sceneLine(compact({ counter: 0 })), REDDENED, 'it flashes when unhurt');
 });
 
+// ---- the dodge ----
+//
+// The mirror of the flash: the other half of the same roll. A dodge bends the
+// hero away from the blow with a per-row displacement — the one place in this
+// renderer where rows are *meant* to come apart — and ghosts the sprite instead
+// of reddening it.
+
+// Where each row of the hero's art starts, one entry per art row. The pose art
+// is padded, so on an undodged frame these are all the same column; a dodge is
+// visible here as a gradient and nowhere else.
+function heroColumns(out, cls, art) {
+  const lines = out.split('\n').map(R.visible);
+  return art.map((row, i) => {
+    const ink = row.trimEnd();
+    assert.ok(ink, `${cls} art row ${i} is blank`);
+    const line = lines.find(l => l.includes(ink));
+    assert.ok(line, `${cls} art row ${i} (${JSON.stringify(ink)}) is not on screen`);
+    return R.width(line.slice(0, line.indexOf(ink)));
+  });
+}
+
+function atDodge(cols, cls, extra) {
+  return atFrame(cols, sprites.hitFrame(cls), { dodged: true, ...extra }, cls);
+}
+
+// Same three widths as the recoil: the lean stacks on top of whatever the attack
+// script is already holding, so the wizard — deepest recoil of the four — is the
+// case that proves MAX_RECOIL reserves room for the pair rather than for one.
+for (const cols of [100, 76, 60]) {
+  for (const cls of Object.keys(GRIP)) {
+    test(`the ${cls} leans clear of a missed swing at ${cols} columns`, () => {
+      const landed = sprites.hitFrame(cls);
+      const art = sprites.attackFrame(cls, landed).art;
+      const upright = heroColumns(atFrame(cols, landed, {}, cls), cls, art);
+      const leaning = heroColumns(atDodge(cols, cls), cls, art);
+      const moved = upright.map((c, i) => c - leaning[i]);
+      assert.deepStrictEqual(moved, sprites.DODGE_LEAN,
+        `the lean does not match DODGE_LEAN — clipped against the left edge at ${cols} columns?`);
+    });
+  }
+}
+
+test('the lean bends the hero rather than shifting or tearing it', () => {
+  // Two properties the art depends on and a flat offset would not have: the feet
+  // stay planted, and the displacement only ever decreases down the sprite. A
+  // lean with a bulge in it reads as broken art, not as a body moving.
+  const lean = sprites.DODGE_LEAN;
+  assert.strictEqual(lean.length, sprites.BIG_ROWS, 'a row of every sprite has no lean');
+  assert.strictEqual(lean[lean.length - 1], 0, 'the hero dodges by sliding, feet and all');
+  assert.ok(lean[0] > 0, 'the head does not move at all');
+  for (let i = 1; i < lean.length; i++) {
+    assert.ok(lean[i] <= lean[i - 1], `the lean bulges at row ${i}: ${lean}`);
+  }
+});
+
+test('a dodge ghosts the hero instead of reddening it', () => {
+  const out = atDodge(100, 'ranger');
+  const line = heroLine(out, 'ranger');
+  assert.doesNotMatch(line, REDDENED, 'a swing that missed still drew blood');
+  assert.match(line, /\x1b\[2m/, 'the dodging hero is not ghosted');
+  assert.match(out, /↩ dodge/, 'the gap never says what happened');
+  assert.doesNotMatch(out, /↩-/, 'a dodge printed a damage figure');
+});
+
+test('the dodge mark waits for the blow it is answering', () => {
+  // Same causality the counter-hit has: nothing the monster does can be on
+  // screen before the hero blow that provoked it has landed.
+  for (const cls of Object.keys(GRIP)) {
+    for (let f = 0; f < sprites.hitFrame(cls); f++) {
+      const out = atFrame(100, f, { dodged: true }, cls);
+      assert.doesNotMatch(out, /↩ dodge/, `${cls}: dodged on frame ${f}, before its own blow landed`);
+      assert.doesNotMatch(heroLine(out, cls), /\x1b\[2m/, `${cls}: ghosted early on frame ${f}`);
+    }
+  }
+});
+
+test('a dodge and a landed counter never share a frame', () => {
+  // The engine will not write both (`engine.retaliate`), but the renderer is the
+  // last line: if a stale save ever carried both, blood wins here too.
+  const out = atFrame(100, sprites.hitFrame('ranger'), { dodged: true, counter: 7 });
+  assert.match(out, /↩-7/, 'the counter it took is missing');
+  assert.doesNotMatch(out, /↩ dodge/, 'the hero both took the blow and slipped it');
+  assert.match(heroLine(out, 'ranger'), REDDENED, 'a blow that landed did not redden the hero');
+});
+
+test('the compact HUD moves the hero out of the way', () => {
+  // Compact has one row, so it cannot bend — and it has never drawn the counter
+  // number either, sharing that gap with the projectile. The whole tell there is
+  // the hero being somewhere else, and ghosted.
+  const compact = (data) => renderAnim(60, (st, now) => {
+    st.monster = { ...BOSS };
+    st.anim = [{ type: 'hit', at: now - sprites.hitFrame('ranger') * sprites.FRAME_MS,
+      dur: 1500, data: { dmg: 38, crit: false, ...data } }];
+  }, 'compact');
+  const columnOfHero = out => {
+    const line = out.split('\n').map(R.visible).find(l => l.includes(sprites.heroes.ranger.idle));
+    assert.ok(line, 'the hero is not on screen');
+    return R.width(line.slice(0, line.indexOf(sprites.heroes.ranger.idle)));
+  };
+  assert.strictEqual(columnOfHero(compact({})) - columnOfHero(compact({ dodged: true })),
+    Math.max(...sprites.DODGE_LEAN), 'the compact hero stands still through a dodge');
+});
+
 test('the flash is colour only — nothing in the scene moves', () => {
   // The tint wraps art the layout has already measured, and the escapes it adds
   // are invisible to R.width. If that ever stopped being true the monster would

@@ -113,6 +113,93 @@ test('monsters retaliate while the hero attacks, without any failed command', ()
   assert.ok(hurtRuns >= 55, `monster hit back in ${hurtRuns}/60 clean runs`);
 });
 
+// ---- the near miss ----
+//
+// A dodge is a *reading* of the retaliation roll, not a second roll and not a
+// damage reduction: under the threshold the monster connects, in the band just
+// above it the HUD gets to say it swung and missed, above that it never swung.
+// These pin that the reading never leaks into the outcome.
+
+// One attack against an immortal monster, with retaliation forced to land on a
+// chosen point of the roll.
+function swing(roll, monster) {
+  const s = fresh();
+  Object.assign(s.monster, { maxHp: 1e6, hp: 1e6 }, monster || {});
+  E.dealDamage(s, 1, {}, () => roll, T0 + 1000);
+  return { s, hit: s.anim.find(a => a.type === 'hit') };
+}
+
+test('a roll in the near-miss band is narrated, and costs nothing', () => {
+  const { s, hit } = swing(B.RETALIATE_CHANCE + B.NEAR_MISS_BAND / 2);
+  assert.strictEqual(hit.data.dodged, true, 'the swing that missed is not on the anim');
+  assert.strictEqual(hit.data.counter, undefined, 'a dodge counted as damage');
+  assert.strictEqual(s.hero.hp, s.hero.maxHp, 'a dodge cost HP');
+});
+
+test('a roll past the band is silence, not a dodge', () => {
+  // Most hits are not answered at all. Narrating every one of them as a dodge
+  // would put the hero perpetually mid-lean and make the tell meaningless.
+  const { s, hit } = swing(B.RETALIATE_CHANCE + B.NEAR_MISS_BAND + 0.01);
+  assert.ok(!hit.data.dodged, 'a swing that never happened was dodged');
+  assert.strictEqual(s.hero.hp, s.hero.maxHp);
+});
+
+test('a landed counter costs HP and is never also a dodge', () => {
+  const { s, hit } = swing(B.RETALIATE_CHANCE - 0.01);
+  assert.ok(hit.data.counter > 0, 'the counter did not land');
+  assert.ok(s.hero.hp < s.hero.maxHp, 'the counter cost nothing');
+  assert.ok(!hit.data.dodged);
+});
+
+test('a burst that coalesces reports the blood, not the dodge', () => {
+  // `enqueue` folds rapid hits into one anim, so a dodge and a landed counter
+  // can reach the same record. A frame showing the hero shrugging off a swing it
+  // actually took is a lie; `↩-N` is the half of the exchange that matters.
+  const s = fresh();
+  Object.assign(s.monster, { maxHp: 1e6, hp: 1e6 });
+  E.dealDamage(s, 1, {}, () => B.RETALIATE_CHANCE + B.NEAR_MISS_BAND / 2, T0 + 1000);
+  assert.strictEqual(s.anim.at(-1).data.dodged, true);
+  E.dealDamage(s, 1, {}, () => B.RETALIATE_CHANCE - 0.01, T0 + 1100);
+  const hit = s.anim.at(-1);
+  assert.strictEqual(s.anim.filter(a => a.type === 'hit').length, 1, 'the burst did not coalesce');
+  assert.ok(hit.data.counter > 0);
+  assert.strictEqual(hit.data.dodged, false, 'the dodge outlived the blow that landed');
+
+  // …and the reverse order cannot resurrect it either.
+  E.dealDamage(s, 1, {}, () => B.RETALIATE_CHANCE + B.NEAR_MISS_BAND / 2, T0 + 1200);
+  assert.strictEqual(s.anim.at(-1).data.dodged, false, 'a later dodge overwrote the blow');
+});
+
+test('reading the roll three ways still spends exactly one of them', () => {
+  // The whole claim that this changes no balance rests on the RNG stream being
+  // untouched: every tuned number and every seeded test downstream of a
+  // retaliation would shift if a branch started drawing a second value.
+  for (const roll of [0.01, B.RETALIATE_CHANCE + 0.01, 0.99]) {
+    let draws = 0;
+    const s = fresh();
+    Object.assign(s.monster, { maxHp: 1e6, hp: 1e6 });
+    E.retaliate(s, () => { draws++; return roll; }, T0 + 1000);
+    assert.strictEqual(draws, 1, `roll ${roll}: retaliate drew ${draws} numbers`);
+  }
+});
+
+test('bosses and goblins dodge as often as trash, though they swing more', () => {
+  // The band sits above each monster's own threshold rather than at a fixed
+  // point, so a boss's extra aggression eats into the silence, not into the
+  // dodges.
+  for (const [label, monster, chance] of [
+    ['boss', { isBoss: true }, B.RETALIATE_CHANCE_BOSS],
+    ['goblin', { isGoblin: true }, B.GOBLIN_RETALIATE_CHANCE],
+  ]) {
+    assert.strictEqual(swing(chance + B.NEAR_MISS_BAND / 2, monster).hit.data.dodged, true,
+      `${label}: a near miss inside its own band was not narrated`);
+    assert.ok(!swing(chance - 0.01, monster).hit.data.dodged,
+      `${label}: a landed counter was drawn as a dodge`);
+    assert.ok(!swing(chance + B.NEAR_MISS_BAND + 0.01, monster).hit.data.dodged,
+      `${label}: a swing that never happened was dodged`);
+  }
+});
+
 test('retaliation never fires from a corpse, and folds into the hit anim', () => {
   const s = fresh();
   s.monster.hp = 1;                      // next attack kills it

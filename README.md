@@ -23,7 +23,8 @@ Every class animates its own attack over the six frames of a hit — the wizard
 gathers its orb and is thrown back by the discharge, the knight steps onto a
 raised sword and sweeps it through 90°, the rogue cocks and throws its dagger,
 the ranger looses and recoils. Whatever leaves the sprite is what crosses the
-gap. Take a counter-swing and the hero washes red for the rest of the frame.
+gap. Take a counter-swing and the hero washes red; slip one and it ghosts and
+leans out of the blow, head furthest, feet planted.
 
 See it without installing anything — every scene, drawn by the real renderer:
 
@@ -279,6 +280,13 @@ All of it also works token-free as `! node bin/rpg.js <cmd>`.
 Monsters fight back: every attack you land has a ~30% chance of a counter-swing
 (shown as `↩-7` flying back at you, and the hero washed red for the rest of the
 animation), so damage no longer depends on you fumbling a command.
+
+The next 20% of that same roll is drawn as `↩ dodge` — a swing that missed. It
+is narration, not a mechanic: no damage is prevented, `retaliate` still spends
+exactly one random number whichever way it reads, and `test/sim.js` prints byte
+-identical output with it on. The band exists so the tell stays worth watching;
+calling *every* unanswered attack a dodge would mean 70% of hits, at which point
+the hero is perpetually mid-lean and it says nothing.
 
 ### The War Horn is detected from git, not from the hook
 
