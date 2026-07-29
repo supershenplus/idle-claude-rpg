@@ -19,6 +19,63 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### Bosses swing deeper, for one number each (2026-07-29)
+
+- **The costed middle option, taken.** `todo.md` carried two versions of
+  per-boss attacks: the full one (six hand-drawn frame sequences, a real art
+  budget, and the ranger's shows they need a solver to align) and a cheap one
+  nobody had priced — keep the single shared script and give each boss only a
+  *depth*. This is the cheap one, built to find out whether it makes the full
+  version unnecessary or merely overdue. It is 7 lines of data and no new art
+- **Two numbers, not one.** `reach` is how far forward the boss comes at full
+  extension in cells, against the shared script's 3; every forward frame scales
+  in proportion so the shape of the blow survives and only its size changes.
+  `hold` is how many frames it sits there. Rootfang and the Echo Wyrm are the
+  pair that proves the second axis earns its place: identical reach of 5, and
+  the treant is still leaning in a frame after the wyrm has snapped back
+- **Two things deliberately don't scale.** The wind-up, because rocking back
+  onto the heel is the same movement whatever the boss weighs — and because it
+  is the frame that spends `MAX_MONSTER_BACK`, so scaling it would buy
+  right-edge reserve for nothing anybody reads as weight. And `fly`, which is a
+  fraction of the gap rather than a count of cells, so it already crosses
+  whatever distance the boss left itself
+- **`hold` has exactly two settings and that is the animation's ceiling, not a
+  choice.** A 1500ms blow at 250ms a frame is six frames; the script has to open
+  and close on its own mark, and the blow lands on frame 3 — so there is one
+  spare frame to hold and no way to buy a second without lengthening the blow
+  for all 28 monsters. Written down as `MAX_HOLD`, derived, and asserted
+- **The depth is paid for in standoff, not out of the gap.** A lunge taken out
+  of the gap would shorten it by exactly the depth on exactly the frame the
+  damage figure appears — and the deepest boss in the game hits hardest, so the
+  Garbage Collector's four-digit hits would have arrived as `♥-1.2` while a
+  kobold's rendered in full. Instead a boss that reaches further *stands*
+  further back (`monsterStandoff`), so every monster closes to the same gap on
+  its impact frame. `MAX_RECOIL` and `MAX_MONSTER_BACK` are now derived over
+  every depth as well as the shared script; neither actually grew
+- **The finding, which was not the expected one.** Because the standoff makes
+  the impact frame identical across bosses, depth carries *no* information on
+  the frame you are most likely to catch — the HUD redraws about once a second
+  over a six-frame blow. What it does instead is make the standoff permanent and
+  always on screen: the hero visibly keeps five more columns from the Garbage
+  Collector than from a kobold, and crowds The Unindexed, whether or not anything
+  is swinging. That is a better read than the motion was going to be, and it is
+  the half a hand-drawn frame sequence would *not* have delivered. So the answer
+  to "does this make the full version unnecessary" is no — but it moves what the
+  full version is for, from "bosses hit differently" to "bosses hit differently
+  *once you are already looking*", which is a much smaller claim on the budget
+- **Tests:** 3 new in `sprites.test.js` (every depth belongs to a boss and every
+  boss has one; a scaled swing obeys every invariant the shared script does,
+  including the two no-scale rules; reach and hold each demonstrably do
+  something, and something different). In `statusline.test.js` every
+  displacement test now runs against a boss *and* a monster with no depth —
+  because the failure a per-boss depth introduces is not "the boss doesn't lunge
+  further", it is the 22 monsters that have no depth quietly acquiring one — plus
+  the truncation case stated as the thing you would see, and the deepest boss
+  added to the right-edge trim test, since a standoff raises the monster's floor
+  column and that is the clamp that fights the right-hand edge
+- New demo scene `heave`, which is only legible next to `struck`: same
+  animation, same reach, and what separates them is standoff and one held frame
+
 ### The monster gets a swing, and a reason to flinch (2026-07-29)
 
 - **Found in play: some monster blows were drawn as nothing at all.** `test_fail`

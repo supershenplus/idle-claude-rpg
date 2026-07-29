@@ -226,6 +226,11 @@ test('an untagged animation still renders the live monster', () => {
 // rapid hits into one anim and counters sum onto the same record, so a catch-up
 // fold can hand the renderer a damage figure with no bound on its width.
 const BOSS = { id: 'rootfang', name: 'Rootfang the Ancient Treant', sprite: '☠', level: 9, isBoss: true, hp: 900, maxHp: 1200 };
+// A monster with no entry in `sprites.BOSS_SWING`, so it swings the shared
+// script at the default depth. Every displacement test below runs against both,
+// because the failure a per-boss depth introduces is not "the boss doesn't lunge
+// further" — it is the 22 monsters that have no depth quietly acquiring one.
+const MOB = { id: 'kobold', name: 'Kobold Scrapper', sprite: '(x)', level: 8, isBoss: false, hp: 60, maxHp: 90 };
 
 function renderHit(cols, data) {
   return renderAnim(cols, (st, now) => {
@@ -237,9 +242,9 @@ function renderHit(cols, data) {
 
 // Where each row of the monster's big art starts, one entry per art row. Two
 // renders that differ only in the size of the numbers must agree exactly.
-function monsterColumns(out) {
+function monsterColumns(out, mon = BOSS) {
   const lines = out.split('\n').map(R.visible);
-  return sprites.bigMonster(BOSS.id, BOSS.sprite)
+  return sprites.bigMonster(mon.id, mon.sprite)
     .map(r => r.trim())
     .filter(Boolean)
     .map((art) => {
@@ -282,9 +287,9 @@ function columnOf(out, needle) {
   return R.width(line.slice(0, line.indexOf(needle)));
 }
 
-function atFrame(cols, frame, data, cls) {
+function atFrame(cols, frame, data, cls, mon = BOSS) {
   return renderAnim(cols, (st, now) => {
-    st.monster = { ...BOSS };
+    st.monster = { ...mon };
     st.anim = [{ type: 'hit', at: now - frame * sprites.FRAME_MS, dur: 1500,
       data: { dmg: 38, crit: false, counter: 0, ...data } }];
   }, 'big', cls);
@@ -573,11 +578,11 @@ test('a coalesced hit cannot shove the compact monster off its centre', () => {
 // what the script says", and the failure they exist to catch is the sprite
 // moving by *nearly* that — clamped by an edge, or butted aside by a mark.
 
-function atMonsterFrame(cols, frame, data, cls) {
+function atMonsterFrame(cols, frame, data, cls, mon = BOSS) {
   return renderAnim(cols, (st, now) => {
-    st.monster = { ...BOSS };
+    st.monster = { ...mon };
     st.anim = [{ type: 'mhit', at: now - frame * sprites.FRAME_MS, dur: 1500,
-      data: { dmg: 46, name: BOSS.name, ...data } }];
+      data: { dmg: 46, name: mon.name, ...data } }];
   }, 'big', cls);
 }
 
@@ -585,8 +590,8 @@ function atMonsterFrame(cols, frame, data, cls) {
 // mark. One displacement for the whole sprite, so disagreement between the art
 // rows is a shear — the failure the marks in the gap can inflict by overrunning
 // (`row.put` butts rather than overlaps) and the one that looks like bad art.
-function monsterShove(out, home) {
-  const moved = monsterColumns(home).map((c, i) => c - monsterColumns(out)[i]);
+function monsterShove(out, home, mon = BOSS) {
+  const moved = monsterColumns(home, mon).map((c, i) => c - monsterColumns(out, mon)[i]);
   assert.strictEqual(new Set(moved).size, 1, `the monster sprite sheared: ${moved}`);
   return moved[0];
 }
@@ -595,13 +600,33 @@ function monsterShove(out, home) {
 // hard — the monster's floor column is pushed right by the hero's own reserved
 // margin, which is exactly where its art can start falling off the far end.
 for (const cols of [100, 76, 60]) {
-  test(`the monster winds up, lunges and returns to its mark at ${cols} columns`, () => {
-    const home = atMonsterFrame(cols, 0);
-    const moved = sprites.monsterAttack.frames
-      .map((_, i) => monsterShove(atMonsterFrame(cols, i), home));
-    assert.deepStrictEqual(moved, sprites.monsterAttack.frames.map(f => f.shove),
-      `the lunge does not match the script — clipped by an edge at ${cols} columns?`);
-    assert.strictEqual(moved[moved.length - 1], 0, 'the monster never returns to its mark');
+  for (const mon of [BOSS, MOB]) {
+    test(`the ${mon.id} winds up, lunges and returns to its mark at ${cols} columns`, () => {
+      const home = atMonsterFrame(cols, 0, {}, undefined, mon);
+      const moved = sprites.monsterAttack.frames
+        .map((_, i) => monsterShove(atMonsterFrame(cols, i, {}, undefined, mon), home, mon));
+      // Against its *own* script, not the shared one: `rootfang` has a depth in
+      // BOSS_SWING and `kobold` does not, and the pair passing this together is
+      // what says the depth is applied by id rather than to everything.
+      assert.deepStrictEqual(moved,
+        sprites.monsterAttack.frames.map((_, i) => sprites.monsterAttackFrame(i, mon.id).shove),
+        `the lunge does not match the script — clipped by an edge at ${cols} columns?`);
+      assert.strictEqual(moved[moved.length - 1], 0, 'the monster never returns to its mark');
+    });
+  }
+
+  // Why the depth is paid for in standoff rather than out of the gap. The figure
+  // appears on the impact frame — the one frame the boss has closed the distance
+  // — so a lunge taken out of the gap would shorten the room for the number by
+  // exactly the depth, and the deepest boss in the game hits hardest. This is
+  // that failure stated as the thing you would see: four digits arriving as
+  // `♥-1.2` off the Garbage Collector and in full off everything else.
+  test(`a deep lunge does not eat the figure it costs you at ${cols} columns`, () => {
+    for (const id of ['kobold', ...Object.keys(sprites.BOSS_SWING)]) {
+      const out = atMonsterFrame(cols, sprites.MONSTER_HIT_FRAME, { dmg: 1234 },
+        'ranger', { ...MOB, id });
+      assert.match(out, /♥-1234/, `${id} truncated the HP it took at ${cols} columns`);
+    }
   });
 
   test(`a struck monster is knocked back and recovers at ${cols} columns`, () => {
@@ -625,16 +650,25 @@ for (const cols of [100, 76, 60]) {
 // silently, and the failure is a boss quietly losing its last columns on exactly
 // the frames something is happening to it.
 test('nothing on the monster side is trimmed off the right-hand edge', () => {
+  // The deepest boss is included because a standoff is bought out of the same
+  // budget: it raises the monster's *floor* column by the depth, which is the
+  // clamp that fights the right-hand edge at the widths where the scene is
+  // tightest. `gc` reaches furthest and is among the widest art in the game, so
+  // it is the case where the two constraints meet.
+  const deepest = Object.keys(sprites.BOSS_SWING)
+    .reduce((a, b) => (sprites.monsterStandoff(b) > sprites.monsterStandoff(a) ? b : a));
   for (const cols of [100, 76, 60]) {
-    for (const [what, out] of [
-      ['wind-up', atMonsterFrame(cols, 1)],
-      ['knockback', atFrame(cols, sprites.hitFrame('ranger'), {})],
-    ]) {
-      for (const line of monsterColumns(out)) {
-        assert.ok(line >= 0, `${what} at ${cols}: the monster art is off the edge`);
+    for (const mon of [BOSS, MOB, { ...BOSS, id: deepest }]) {
+      for (const [what, out] of [
+        ['wind-up', atMonsterFrame(cols, 1, {}, undefined, mon)],
+        ['knockback', atFrame(cols, sprites.hitFrame('ranger'), {}, undefined, mon)],
+      ]) {
+        for (const line of monsterColumns(out, mon)) {
+          assert.ok(line >= 0, `${mon.id} ${what} at ${cols}: the monster art is off the edge`);
+        }
+        assert.doesNotMatch(out.split('\n')[3], /…/,
+          `${mon.id} ${what} at ${cols}: an art row was trimmed`);
       }
-      assert.doesNotMatch(out.split('\n')[3], /…/,
-        `${what} at ${cols}: an art row was trimmed`);
     }
   }
 });
@@ -718,11 +752,17 @@ test('a blow the hero never provoked still reddens it', () => {
 
 test('the blow drives the hero back within its reserved margin', () => {
   for (const cols of [100, 76, 60]) {
-    const home = columnOf(atMonsterFrame(cols, 0, {}, 'ranger'), BOW);
-    const moved = sprites.monsterAttack.frames
-      .map((_, i) => home - columnOf(atMonsterFrame(cols, i, {}, 'ranger'), BOW));
-    assert.deepStrictEqual(moved, sprites.monsterAttack.frames.map(f => f.hero),
-      `the hero is not driven back as scripted at ${cols} columns`);
+    // Both depths again: a deeper boss drives the hero further, and MAX_RECOIL
+    // is derived over every depth precisely so the extra is reserved rather than
+    // clamped away against the left edge at the widths where it would bind.
+    for (const mon of [BOSS, MOB]) {
+      const home = columnOf(atMonsterFrame(cols, 0, {}, 'ranger', mon), BOW);
+      const moved = sprites.monsterAttack.frames
+        .map((_, i) => home - columnOf(atMonsterFrame(cols, i, {}, 'ranger', mon), BOW));
+      assert.deepStrictEqual(moved,
+        sprites.monsterAttack.frames.map((_, i) => sprites.monsterAttackFrame(i, mon.id).hero),
+        `the ${mon.id} does not drive the hero back as scripted at ${cols} columns`);
+    }
   }
 });
 

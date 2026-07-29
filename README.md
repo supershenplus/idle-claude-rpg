@@ -33,8 +33,12 @@ The monster gets a swing back. A failing test or a failing command is drawn as a
 lunge — wind up, come forward, mark crossing the gap right-to-left, `♥-46` for
 what it cost — instead of HP quietly leaving the bar, which is what it used to
 be. And it reels when you connect: knocked back two cells and lit up in the
-colour of the number hitting it. One script covers all 28 monsters, so the six
-bosses stay the place hand-drawn attack art would be worth the budget.
+colour of the number hitting it. One script covers all 28 monsters; the seven
+bosses scale it by a *depth* — how far they come and how long they hold it — so
+Rootfang heaves where a leech jabs, on no extra art. Depth is paid for in
+distance rather than out of the gap, so a deep boss stands correspondingly
+further off: the hero keeps five more columns from the Garbage Collector than
+from a kobold, and that reads whether or not anything is swinging.
 
 See it without installing anything — every scene, drawn by the real renderer:
 

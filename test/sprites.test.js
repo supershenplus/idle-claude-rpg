@@ -296,6 +296,73 @@ test('neither monster script runs past the animation it plays over', () => {
   }
 });
 
+// ---- the boss depths ----
+//
+// `BOSS_SWING` is the cheap half of per-boss attacks: no new art, one depth per
+// boss scaling the shared script. Which means every invariant the shared script
+// is held to above has to survive the scaling, for all seven — and the scaling
+// is the thing that can break them, because it is arithmetic on hand-picked
+// numbers rather than frames somebody looked at.
+
+test('every boss depth belongs to a boss, and every boss has one', () => {
+  const bosses = C.zones.map(z => z.boss.id);
+  for (const id of Object.keys(S.BOSS_SWING)) {
+    assert.ok(bosses.includes(id), `${id} has a swing depth and is not a boss`);
+  }
+  // The other direction is the one that catches a zone added without a depth:
+  // it would silently swing the trash script, which is the exact thing this
+  // exists to stop the bosses doing.
+  for (const id of bosses) {
+    assert.ok(S.BOSS_SWING[id], `the boss ${id} has no swing depth`);
+  }
+});
+
+test('a scaled swing obeys every rule the shared script does', () => {
+  const base = S.monsterAttack.frames;
+  for (const id of Object.keys(S.BOSS_SWING)) {
+    const fs = base.map((_, i) => S.monsterAttackFrame(i, id));
+    const where = what => `${id}: ${what}`;
+    assert.strictEqual(fs[0].shove, 0, where('opens off its mark'));
+    assert.strictEqual(fs[fs.length - 1].shove, 0, where('closes off its mark'));
+    assert.strictEqual(fs[0].hero, 0, where('opens with the hero already driven back'));
+    assert.strictEqual(fs[fs.length - 1].hero, 0, where('closes with the hero still back'));
+    assert.ok(fs.some(f => f.shove > 0), where('never comes forward'));
+    assert.ok(fs.some(f => f.shove < 0), where('swings with no wind-up'));
+    for (const [i, f] of fs.entries()) {
+      assert.ok(-f.shove <= S.MAX_MONSTER_BACK, where(`frame ${i} winds up past the reserve`));
+      assert.ok(f.hero >= 0 && f.hero <= S.MAX_RECOIL, where(`frame ${i} drives the hero past its margin`));
+      // The mark is a fraction of the gap, not a count of cells, so a depth must
+      // leave it alone — a boss that reached further and threw a shorter blow
+      // would land the figure somewhere the sprite is not.
+      assert.strictEqual(f.fly, base[i].fly, where(`frame ${i} moved the mark`));
+      // Documented rule, and the one that keeps MAX_MONSTER_BACK where it is:
+      // depth is bought forward, never backward.
+      if (base[i].shove < 0) {
+        assert.strictEqual(f.shove, base[i].shove, where(`frame ${i} deepened the wind-up`));
+      }
+    }
+    assert.strictEqual(fs[S.MONSTER_HIT_FRAME].shove, Math.max(...fs.map(f => f.shove)),
+      where('lands its blow somewhere other than full extension'));
+  }
+});
+
+test('reach and hold each do something, and something different', () => {
+  const peak = id => Math.max(...S.monsterAttack.frames.map((_, i) => S.monsterAttackFrame(i, id).shove));
+  const held = id => S.monsterAttack.frames
+    .filter((_, i) => S.monsterAttackFrame(i, id).shove === peak(id)).length;
+  const reaches = new Set(Object.keys(S.BOSS_SWING).map(peak));
+  assert.ok(reaches.size >= 3, `every boss lunges the same distance: ${[...reaches]}`);
+  assert.ok([...reaches].some(r => r > S.BASE_REACH), 'no boss out-reaches the trash');
+  assert.ok([...reaches].some(r => r < S.BASE_REACH), 'no boss is shallower than the trash');
+  // The pair that proves hold is a second axis and not decoration: same reach,
+  // different number of frames spent at it.
+  assert.strictEqual(peak('rootfang'), peak('echowyrm'), 'the matched-reach pair drifted apart');
+  assert.notStrictEqual(held('rootfang'), held('echowyrm'), 'hold changes nothing between them');
+  for (const id of Object.keys(S.BOSS_SWING)) {
+    assert.ok(held(id) <= S.MAX_HOLD, `${id} holds ${held(id)} frames and cannot close on its mark`);
+  }
+});
+
 test('every class has hero art and a one-line sprite', () => {
   for (const id of Object.keys(C.classes)) {
     assert.ok(S.heroesBig[id], `${id}: no big art`);

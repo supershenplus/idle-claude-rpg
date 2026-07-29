@@ -151,6 +151,21 @@ const SCENES = {
       return st;
     },
   },
+  // The same blow again, from the deepest thing that throws one. Worth its own
+  // scene only next to `struck` above: the wyrm and the treant are the same
+  // animation and the same reach, and what separates them on screen is that the
+  // treant stands further off and is still leaning in a frame later. Read them
+  // as a pair or the depth is invisible.
+  heave: {
+    blurb: 'a boss swings deeper than the trash does — Rootfang at full extension',
+    build: now => {
+      const st = hero(now, { cls: 'knight', name: 'Bastion', level: 10, zone: 'grove', gold: 2100, hpFrac: 0.38 });
+      st.monster = monster('grove', 'rootfang', 9, 0.55);
+      st.anim = [anim('mhit', 1500, { dmg: 61, name: 'Rootfang the Ancient Treant' }, now)];
+      st.ticker = [R.c('dim', 'the build broke')];
+      return st;
+    },
+  },
   boss: {
     blurb: 'the boss intro marquee (flashes between two reds)',
     build: now => {

@@ -13,28 +13,28 @@ this file stays readable as a list of things to do.
 
 ## Found in play — 2026-07-28
 
-- [ ] **Bosses should get hand-scripted attacks of their own.** The generic
-      treatment that landed (see `BUILD-LOG.md`) is what makes the other 22
-      monsters legible; the six bosses are where per-monster art actually pays
-      for itself, the same way `sprites.attacks.ranger` pays off for the class
-      you play. A wind-up pose, a signature projectile or reach, and a recoil —
-      so Rootfang's swing doesn't read like a leech's. Two of the three
-      prerequisites are now closed: the generic attack exists (bosses are the
-      exception to a rule that is finally written down), and the right-edge
-      reserve exists as `MAX_MONSTER_BACK`. What's left is that `monsterAttack`
-      is a single table with no key at all, so a per-boss script means keying it
-      by monster id and deciding what an unkeyed monster falls back to —
-      `attackFrame`'s `null`-means-generic shape is the precedent. Worth deciding
-      early whether a boss script is a full `frames` array like the ranger's or
-      just a pose swap on the impact frame: six hand-drawn sequences is a real
-      art budget, and the ranger's took a solver to align
-- [ ] A cheaper middle option the generic script opened up and nobody has costed:
-      keep one shared `frames` array and give each boss only a *depth* — how far
-      it lunges, how long it holds. Rootfang heaving forward four cells over two
-      frames against a leech's two-cell jab is already most of the difference in
-      how a blow reads, and it is one number per boss rather than five rows of
-      art. Probably not enough on its own; possibly enough to tell whether the
-      full version is worth the budget
+- [ ] **Bosses should get hand-scripted attacks of their own.** Still open, and
+      now cheaper to judge: the depth pass landed (`sprites.BOSS_SWING`, see
+      `BUILD-LOG.md`), so the keying question is answered — `monsterAttackFrame`
+      takes an id and falls back to the shared script, the same
+      `null`-means-generic shape `attackFrame` uses. What is left is the art:
+      a wind-up pose, a signature projectile, and a recoil per boss, which is
+      six hand-drawn sequences and a real budget. The ranger's took a solver to
+      align, so cost that in
+- [ ] **What the depth pass changed about the case for it.** Paying the depth in
+      standoff makes the *impact frame* identical across bosses by construction,
+      so at roughly one redraw a second over a six-frame blow, the depth is not
+      what you catch — the standoff is, and that one is permanent and always on
+      screen. Which means hand-drawn frames would be buying legibility on frames
+      a viewer mostly does not see. The honest re-framing: per-boss art is worth
+      it if you expect people to *watch* a boss fight rather than glance at it,
+      and the way to find that out is to fight one and notice whether you did
+- [ ] A smaller thing the depth pass surfaced and did not take: `hold` has
+      exactly two settings, because a 1500ms blow is six frames and the script
+      has to open and close on its mark. Every extra pose or beat the bosses
+      might want runs into the same wall. Lengthening `mhit` for bosses only is
+      one line in `engine.retaliate` and would need `MAX_HOLD` to stop being a
+      constant — worth doing *with* the art, never before it
 
 ---
 

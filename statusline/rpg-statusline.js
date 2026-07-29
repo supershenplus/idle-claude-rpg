@@ -167,8 +167,16 @@ function main(stdin) {
   // pose art — one displacement per frame, applied to whichever of the 28
   // sprites happens to be standing there. It drives the hero back too, so the
   // recoil field is shared: on any given frame at most one of the two is live.
-  const mAtk = anim && anim.type === 'mhit' ? sprites.monsterAttackFrame(frame) : null;
+  const mAtk = anim && anim.type === 'mhit' ? sprites.monsterAttackFrame(frame, mon.id) : null;
   const recoil = atk ? atk.back : (mAtk ? mAtk.hero : 0);
+
+  // Bosses swing deeper than the shared script (sprites.BOSS_SWING), and the
+  // extra depth is bought with distance rather than out of the gap: a boss that
+  // comes four cells further stands four cells further back, so the gap it has
+  // closed on the impact frame is the same one every other monster closes to.
+  // Everything below measures from `gap` instead of the constant for that
+  // reason — the constant is now the *default* standoff, not the only one.
+  const gap = HERO_GAP + sprites.monsterStandoff(mon.id);
 
   // And the other side of the same exchange: what the monster does when the
   // hero's blow lands on it. Reckoned in frames *since* impact so it stays in
@@ -284,7 +292,7 @@ function main(stdin) {
     let flightCol = 0;
     let flight = '';
     if (!atk) {
-      const travel = Math.min(HERO_GAP - 4, frame * 3);
+      const travel = Math.min(gap - 4, frame * 3);
       flight = R.fit(heroArt.trail.repeat(Math.min(3, travel + 1)) + heroArt.proj, cells);
     } else if (atk.fly != null) {
       // The head travels the gap less its own width, so a projectile wider than
@@ -339,7 +347,7 @@ function main(stdin) {
     // mark it is carrying. `row.put` butts overlapping text on with a space
     // rather than overlapping it, so a collision here would slide the sprite
     // off the terminal midpoint rather than looking like a collision.
-    const markLeft = Math.max(LEFT_MIN, monHome - HERO_GAP + 1);
+    const markLeft = Math.max(LEFT_MIN, monHome - gap + 1);
     const cells = Math.max(1, monDraw - markLeft - 1);
     const g = gapMarks(cells);
     // Compact has one row and no pose art, so the recoil is all it takes from a
@@ -367,7 +375,7 @@ function main(stdin) {
       : g.flight + (g.dmg ? ' ' + g.dmg : '');
     const scene = R.row()
       .put(tint(heroArt.idle),
-        Math.max(0, Math.max(LEFT_MIN, monHome - HERO_GAP - R.width(heroArt.idle)) - recoil - lean))
+        Math.max(0, Math.max(LEFT_MIN, monHome - gap - R.width(heroArt.idle)) - recoil - lean))
       .put(R.fit(marks, cells), markLeft)
       .put(monTint(monster), monDraw)
       .toString();
@@ -393,10 +401,10 @@ function main(stdin) {
     // just trims the line and a knocked-back boss silently loses its last two
     // columns. The reserve gives way to the hero's margin at widths too narrow
     // to honour both, because the left one is the one holding the scene up.
-    const monHome = Math.max(LEFT_MIN + sprites.MAX_RECOIL + heroW + HERO_GAP,
+    const monHome = Math.max(LEFT_MIN + sprites.MAX_RECOIL + heroW + gap,
       Math.min(Math.round(mid - monW / 2), cols - monW - sprites.MAX_MONSTER_BACK));
     const monDraw = Math.max(0, monHome - monShove);
-    const heroHome = Math.max(LEFT_MIN, monHome - HERO_GAP - heroW);
+    const heroHome = Math.max(LEFT_MIN, monHome - gap - heroW);
     const heroLeft = Math.max(0, heroHome - recoil);
     // Anchored to where the hero stands, not to where it has been shoved: the
     // arrow has already left the bow, and marks that slid back with the recoil
