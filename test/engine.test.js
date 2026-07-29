@@ -810,3 +810,123 @@ test('typed travel and automatic travel are the same operation', () => {
   assert.strictEqual(s.counters.killsSinceBoss, 0);
   assert.strictEqual(E.travelTo(s, 'caves', () => 0.5, T0), false, 'travelling where you already are is a no-op');
 });
+
+// ---------- the loot goblin ----------
+//
+// A sub-boss that turns up in place of trash. The three things that can go
+// wrong with it are all invisible in normal play: it can pre-empt a boss, it
+// can quietly stretch the boss cycle, and it can hand a low-level hero gear
+// from a zone they have never seen. One test each.
+
+const { mulberry32 } = require('../lib/rng');
+
+// The spawn roll reads B.GOBLIN_CHANCE at call time, so pinning it to 0 or 1
+// makes "a goblin appeared" a fact rather than a 1-in-20 flake.
+function goblinState(chance) {
+  const s = fresh();
+  s.hero.level = 9;
+  const saved = B.GOBLIN_CHANCE;
+  B.GOBLIN_CHANCE = chance;
+  return { s, restore: () => { B.GOBLIN_CHANCE = saved; } };
+}
+
+test('a ready boss always beats the goblin roll', () => {
+  const { s, restore } = goblinState(1);            // goblin on every spawn…
+  try {
+    const zone = C.zoneById(s.hero.zone);
+    s.hero.level = zone.boss.level - 1;
+    s.counters.killsSinceBoss = B.BOSS_KILLS_REQUIRED;
+    E.spawnMonster(s, mulberry32(1));
+    assert.ok(s.monster.isBoss, 'the goblin pre-empted a ready boss');
+    assert.ok(!s.monster.isGoblin);
+  } finally { restore(); }
+});
+
+test('the goblin consumes the same rand() calls as the trash it replaces', () => {
+  // The fold has to replay identically whether or not a goblin turned up, so
+  // the two branches must draw the same number of rolls off the stream.
+  // Sequential, not both-then-spawn: the two helpers share one global knob.
+  const spawnWith = (chance) => {
+    const { s, restore } = goblinState(chance);
+    try { E.spawnMonster(s, mulberry32(99)); return s.monster; } finally { restore(); }
+  };
+  const goblin = spawnWith(1);
+  const trash = spawnWith(0);
+  assert.ok(goblin.isGoblin, 'chance 1 did not produce a goblin');
+  assert.ok(!trash.isGoblin, 'chance 0 produced a goblin');
+  assert.strictEqual(goblin.level, trash.level, 'the goblin shifted the level roll');
+  assert.strictEqual(goblin.maxHp, trash.maxHp * B.GOBLIN_HP_MULT, 'the goblin shifted the hp roll');
+});
+
+// Kill whatever is standing, through the public combat path rather than an
+// exported internal — a goblin that only dies when a test reaches into the
+// engine is a goblin no player ever kills.
+function slay(s, seed, now) {
+  s.monster.hp = 1;
+  E.dealDamage(s, 50, {}, mulberry32(seed), now || T0);
+}
+function standUpGoblin(s) {
+  s.monster = {
+    id: C.GOBLIN.id, name: C.GOBLIN.name, level: 5, isBoss: false, isGoblin: true,
+    sprite: C.GOBLIN.sprite, maxHp: 10, hp: 10,
+  };
+}
+
+test('killing a goblin credits the boss cycle for the time it took', () => {
+  // Crediting one kill for a x3-HP fight is a 14% cut to boss cadence — the
+  // sim measured it. It has to pay back what it cost.
+  const { s, restore } = goblinState(0);
+  try {
+    standUpGoblin(s);
+    const before = s.counters.killsSinceBoss;
+    slay(s, 3);
+    assert.strictEqual(s.counters.killsSinceBoss - before, B.GOBLIN_HP_MULT,
+      'the goblin did not pay back the boss progress it consumed');
+    assert.strictEqual(s.counters.goblinKills, 1);
+  } finally { restore(); }
+});
+
+test('the goblin pays exactly one of its two arms, never both', () => {
+  const { s, restore } = goblinState(0);
+  try {
+    let epicArms = 0, goldArms = 0;
+    for (let i = 0; i < 40; i++) {
+      standUpGoblin(s);
+      s.anim.length = 0;
+      slay(s, i, T0 + i * 100000);
+      const payout = s.anim.filter(a => a.type === 'goblinloot');
+      assert.strictEqual(payout.length, 1, `roll ${i}: expected exactly one payout`);
+      const d = payout[0].data;
+      // The gold arm names no item; the epic arm names one and reports whether
+      // the drop filter sold it. Both at once would make the second the
+      // expected outcome instead of a coin-flip.
+      if (d.item) { epicArms++; assert.ok(d.vendored || d.gold == null, `roll ${i}: paid both arms`); }
+      else { goldArms++; assert.ok(d.gold > 0, `roll ${i}: gold arm paid nothing`); }
+    }
+    assert.ok(epicArms > 0 && goldArms > 0,
+      `40 goblins produced ${epicArms} epic and ${goldArms} gold arms — one arm is unreachable`);
+  } finally { restore(); }
+});
+
+test("a goblin's epic rolls at its own level, not the hero's ceiling", () => {
+  // The dangerous version of this feature hands a level-8 Grove hero Null
+  // Expanse gear. The prize is a *rarity* windfall, never an ilvl one.
+  const { s, restore } = goblinState(0);
+  try {
+    const zone = C.zoneById(s.hero.zone);
+    const item = E.rollLoot(s, 5, { guaranteed: true, floorEpic: true, from: 'goblin:test' }, mulberry32(11), T0);
+    assert.ok(item, 'the guaranteed prize produced nothing');
+    assert.strictEqual(item.ilvl, 5, 'the prize rolled off a level other than the goblin\'s');
+    assert.ok(item.ilvl <= zone.max, 'the prize out-scaled the zone');
+    const idx = B.RARITIES.findIndex(r => r.id === item.rarity);
+    assert.ok(idx >= B.GOBLIN_RARITY_FLOOR, `prize rolled ${item.rarity}, below the epic floor`);
+  } finally { restore(); }
+});
+
+test('the goblin hits harder than trash and softer than a boss', () => {
+  assert.ok(B.GOBLIN_RETALIATE_CHANCE > B.RETALIATE_CHANCE
+    && B.GOBLIN_RETALIATE_CHANCE < B.RETALIATE_CHANCE_BOSS, 'retaliate chance is out of band');
+  assert.ok(B.GOBLIN_RETALIATE_MULT > B.RETALIATE_MULT
+    && B.GOBLIN_RETALIATE_MULT < B.RETALIATE_MULT_BOSS, 'retaliate damage is out of band');
+  assert.ok(B.GOBLIN_HP_MULT < 10, 'the goblin is as tanky as a boss');
+});

@@ -39,11 +39,14 @@ const AGO = FRAME * sprites.FRAME_MS;
 function monster(zoneId, monsterId, level, hpFrac) {
   const zone = C.zoneById(zoneId);
   const boss = zone.boss.id === monsterId ? zone.boss : null;
-  const m = boss || zone.monsters.find(x => x.id === monsterId);
+  // The goblin belongs to no zone — it turns up wherever you are — so it is
+  // looked up outside the roster rather than being absent from every one.
+  const goblin = C.GOBLIN.id === monsterId ? C.GOBLIN : null;
+  const m = boss || goblin || zone.monsters.find(x => x.id === monsterId);
   if (!m) throw new Error(`no monster ${monsterId} in ${zoneId}`);
-  const maxHp = B.monsterMaxHp(level, 0.5, !!boss);
+  const maxHp = B.monsterMaxHp(level, 0.5, !!boss) * (goblin ? B.GOBLIN_HP_MULT : 1);
   return {
-    id: m.id, name: m.name, level, isBoss: !!boss, sprite: m.sprite,
+    id: m.id, name: m.name, level, isBoss: !!boss, isGoblin: !!goblin, sprite: m.sprite,
     maxHp, hp: Math.max(1, Math.round(maxHp * hpFrac)),
   };
 }
@@ -104,6 +107,26 @@ const SCENES = {
       st.monster = monster('peaks', 'aurelia', 45, 1);
       st.anim = [anim('bossintro', 6000, { name: 'Aurelia, Mirror Queen' }, now)];
       st.ticker = [R.c('dim', 'the approach is earned — 15 kills')];
+      return st;
+    },
+  },
+  goblin: {
+    blurb: 'a loot goblin turns up in place of the trash (flashes)',
+    build: now => {
+      const st = hero(now, { cls: 'rogue', name: 'Gavin', level: 15, zone: 'caves', gold: 12400, hpFrac: 0.71 });
+      st.monster = monster('caves', C.GOBLIN.id, 14, 0.62);
+      st.anim = [anim('goblin', 4000, { name: C.GOBLIN.name }, now)];
+      st.ticker = [R.c('dim', 'it is not from around here')];
+      return st;
+    },
+  },
+  goblinloot: {
+    blurb: "the goblin's sack bursts — the gold arm of the payout",
+    build: now => {
+      const st = hero(now, { cls: 'rogue', name: 'Gavin', level: 15, zone: 'caves', gold: 21750, hpFrac: 0.64 });
+      st.monster = monster('caves', C.GOBLIN.id, 14, 0.01);
+      st.anim = [anim('goblinloot', 5000, { name: C.GOBLIN.name, gold: 9350 }, now)];
+      st.ticker = [R.c('dim', 'the goblin drops its sack +9,350g')];
       return st;
     },
   },

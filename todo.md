@@ -142,18 +142,20 @@ this file stays readable as a list of things to do.
       adds 2% of what the item rolled, which on Grove numbers is +0.22 ATK, so
       upgrades are dead at that tier too and there is genuinely nothing to spend
       gold on before the second zone
-- [ ] **Loot goblin.** ~5% chance on spawn of getting a goblin instead of the
-      zone's trash. Kill it and it pays out one of two ways: a big slug of gold,
-      or a guaranteed epic. Open questions before this is buildable: (a) what
-      rolls the 5% — `spawnMonster` is the obvious hook, but it must not consume
-      boss-cycle kills or the goblin becomes a boss-delay tax; (b) scale the
-      payout off `killGold(mLvl)` and `itemStats(ilvl)` so it stays a windfall
-      rather than a level-8 hero holding Null-tier gear — the epic arm is the
-      dangerous one, since `BOSS_RARITY_FLOOR` currently makes epics the boss's
-      job; (c) it needs to *read* as an event — sprite, banner, and something
-      in `bannerText`, or a 1-in-20 spawn is just a monster with odd numbers.
-      Worth simming: at 300 events/day a 5% spawn is several a day, which is
-      enough to move the economy the v1.5 sink was tuned against
+- [ ] **Loot goblin — shipped, but it doesn't flee.** See `BUILD-LOG.md`. The
+      archetype's other half is that a loot goblin *runs*: it should be possible
+      to lose the prize by not working fast enough, which is the only version of
+      this that makes the banner urgent rather than decorative — and the banner
+      already says "get it before it runs", which is currently a bluff. Not built
+      because fleeing means a monster can leave the field on a *timer* rather
+      than on an event, and every other state change in this game is driven by a
+      folded hook event. A goblin that despawns at wall-clock T is the first
+      thing in the engine whose outcome depends on when you happened to look,
+      which is exactly the class of bug `fold` exists to prevent. Plausible dodge:
+      give the goblin a kill-deadline in *events* rather than seconds (it flees
+      if it survives N more folded events), which keeps the whole thing
+      deterministic and replayable. Worth doing — it is the difference between an
+      event and a bonus
 - [ ] **Guild / shared boss — abstract, unscoped, not a spec.** One boss, several
       people, everybody's work is the damage: your commits and mine land on the
       same HP bar, and the kill belongs to whoever was grinding. It fits the

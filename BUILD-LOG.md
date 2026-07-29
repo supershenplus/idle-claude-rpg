@@ -19,6 +19,45 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### The loot goblin, and the balance gate it exposed (2026-07-28)
+
+- **A sub-boss that turns up in place of trash, 5% of non-boss spawns.** ×3 HP,
+  ×3 XP, and one payout in one of two arms: a slug of gold at ×8 this monster's
+  own `killGold`, or a guaranteed epic at this monster's own ilvl. Never both —
+  two prizes makes the second one the expected outcome and the goblin stops
+  being a coin-flip you look forward to
+- **Every number is a multiple of what that spawn would have been**, which is
+  the safety property the todo asked for: a goblin met at Lv8 in the Grove pays
+  Grove rates, so the prize is a *rarity* windfall and never an ilvl one. The
+  failure mode being designed out is a low-level hero holding Null-tier gear
+- **The boss always wins the roll**, and the goblin draws the same three rolls
+  off the rand() stream as the trash it replaces — so a fold replays identically
+  whether or not one turned up. Both pinned by tests
+- **It credits boss progress ×3, not ×1, and that was measured rather than
+  guessed.** Crediting one kill for a three-kill fight looked fair and wasn't: a
+  controlled A/B (same stream, `GOBLIN_CHANCE` 0 vs 0.05) put 90-day boss kills
+  at 65 without and 56 with — a 14% cut, which showed up downstream as a 36%
+  smaller upgrade sink, because bosses are the gear engine. Crediting
+  `GOBLIN_HP_MULT` restored it to 65 exactly
+- **The gold arm turned out to be economically neutral at ×8** — total gold
+  earned moved 0.5% — because the slugs almost exactly offset the kills lost to
+  the extra HP. It makes income lumpier without inflating it, which is the right
+  outcome, and it is why the sink gate never moved
+- **It bites, because the sim proved a riskless goblin breaks the pacing.** As a
+  fat trash mob with a prize, the attentive hero over-geared and stopped dying.
+  Retaliation now sits between trash and boss (0.40/1.0 against 0.30/0.45 and
+  0.45/1.6), and since the fight lasts ×3 as long, total exposure is roughly
+  nine times a trash mob's
+- **The death gate was a coin flip, and had been all along.** It asserted a ratio
+  over a single-digit death count from one hardcoded seed. Across eight seeds an
+  *unchanged* engine produces 2,1,3,2,3,0,2,0 deaths — it fails its own gate
+  three times in eight, and was passing on `0xC0FFEE` by luck. Any change that
+  moved the stream re-rolled the coin, and this one lost. Fixed by averaging the
+  gate over eight seeds, where the mean is stable to a tenth of a death: it now
+  reads 27 days with goblins disabled and 21 with them on, both inside 4-30.
+  Worth stating plainly — **the goblin makes the hero die *more*, not less**
+  (mean 1.63 → 2.00 across those seeds). The single-seed gate said the opposite
+
 ### The shelf stopped advertising things you can't use (2026-07-28)
 
 - **The same disease as the bag, on the buying side.** `rollStock` rolls ilvl

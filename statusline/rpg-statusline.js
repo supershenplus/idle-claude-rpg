@@ -113,6 +113,18 @@ function main(stdin) {
       case 'bossdown':
         return R.c('brightYellow', `☠ ${anim.data.name} DEFEATED`
           + (anim.data.unlocked ? ` — ${anim.data.unlocked} unlocked` : '') + ' ☠');
+      // The goblin gets a flashing banner like a boss because it is the same
+      // kind of moment — something turned up that is not the usual trash — and
+      // a 5% spawn nobody notices is just a monster with odd numbers.
+      case 'goblin':
+        return R.c(flash2('brightYellow', 'yellow'), `≡$≡ ${String(anim.data.name || '').toUpperCase()} — get it before it runs ≡$≡`);
+      case 'goblinloot':
+        if (anim.data.gold != null && !anim.data.item) {
+          return R.c('brightYellow', `≡$≡ the sack bursts — +${R.fmtGold(anim.data.gold)} ≡$≡`);
+        }
+        return anim.data.vendored
+          ? R.c('brightYellow', `≡$≡ [${anim.data.rarity}] ${anim.data.item} — you wear better, sold for ${R.fmtGold(anim.data.gold)}`)
+          : R.rarityColored(anim.data.rarity, `≡$≡ [${anim.data.rarity}] ${anim.data.item} — the goblin's prize!`);
       // Gold goes through fmtGold everywhere it appears, banners included — a
       // death at level 58 costs five figures, and `-21594g` next to a vitals
       // line reading `⛁ 410,300g` reads as a different currency.

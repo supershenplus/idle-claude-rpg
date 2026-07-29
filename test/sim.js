@@ -45,7 +45,10 @@ function run(days, perDay, print, opts) {
   // so leaving this at 0 means the whole paragon curve goes untested.
   const pastCap = (opts && opts.pastCap) || 0;
   const T0 = 1_700_000_000_000;
-  const rand = mulberry32(0xC0FFEE);
+  // One fixed seed by default, so every gate but the death one stays a single
+  // reproducible number. `opts.seed` exists for the gates that have to average
+  // across runs to mean anything — see the death check in `assertBalance`.
+  const rand = mulberry32((opts && opts.seed) || 0xC0FFEE);
   const state = E.newState('wizard', 'Sim', T0);
   let capDay = null;
   const zonesSeen = new Set(['grove']);
@@ -176,11 +179,23 @@ function assertBalance() {
   // Death is meant to be punctuation: rare enough that losing a fight is an
   // event, common enough that the HP bar is not decoration. Measured against the
   // attentive player, since that is who the pacing is written for.
-  const deaths = at300.state.counters.deaths;
-  const perDeath = deaths ? (at300.capDay || 150) / deaths : Infinity;
-  check(deaths >= 1 && perDeath >= 4 && perDeath <= 30,
+  //
+  // Averaged over eight seeds, because one seed cannot carry this check. An
+  // attentive hero dies 0-4 times in a 90-day run and the gate is a ratio over
+  // that count, so a single run swings between "every 11 days" and "never" on
+  // the seed alone — measured: 2,1,3,2,3,0,2,0 deaths across eight seeds of an
+  // unchanged engine, which fails this gate three times in eight. It was passing
+  // on 0xC0FFEE by luck, and any change that moved the stream re-rolled the
+  // coin. The mean is stable to a tenth of a death across the same eight, which
+  // is what makes it an assertion rather than a lottery.
+  const DEATH_SEEDS = [0xC0FFEE, 1, 2, 3, 4, 5, 6, 7];
+  const deathRuns = DEATH_SEEDS.map(seed => run(90, 300, false, { seed }));
+  const meanDeaths = deathRuns.reduce((s, r) => s + r.state.counters.deaths, 0) / DEATH_SEEDS.length;
+  const meanCapDay = deathRuns.reduce((s, r) => s + (r.capDay || 150), 0) / DEATH_SEEDS.length;
+  const perDeath = meanDeaths ? meanCapDay / meanDeaths : Infinity;
+  check(meanDeaths >= 1 && perDeath >= 4 && perDeath <= 30,
     `attentive player dies every ${perDeath === Infinity ? '∞' : perDeath.toFixed(0)} days `
-    + `(${deaths} total, want one per 4-30 days)`);
+    + `(${meanDeaths.toFixed(2)} mean deaths over ${DEATH_SEEDS.length} seeds, want one per 4-30 days)`);
 
   // The sink has to actually absorb. Before upgrading existed an attentive
   // player finished a run holding ~1.07M gold with nothing left to buy, and the
