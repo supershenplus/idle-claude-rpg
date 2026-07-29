@@ -393,8 +393,13 @@ Adding a gear slot means adding it in three places: `content.SLOT_TYPES` (count
 `state.CURRENT_VERSION` with a migration if saved items need re-slotting.
 `test/equipment.test.js` fails if the first two drift apart.
 
-State lives in `~/.config/idle-claude-rpg/` (atomic writes, daily backup,
-corrupt-save quarantine). Tuning knobs are all in `lib/balance.js`.
+State lives in `~/.config/idle-claude-rpg/` (atomic writes, four rolling hourly
+backups, corrupt-save quarantine). The backups step back one generation an hour
+rather than keeping a single daily copy, because the write that motivated them
+was not a corruption but a perfectly valid save written over a good one — which
+nothing in the load path can detect, so depth of history is the only defence.
+Recovery walks `state.bak.1.json` outward until one parses. Tuning knobs are all
+in `lib/balance.js`.
 
 `bin/demo.js` poses a synthetic save per scene and shells out to the **real**
 statusline rather than drawing its own version — a demo with its own copy of the

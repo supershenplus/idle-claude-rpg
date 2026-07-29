@@ -19,6 +19,49 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### Four backups instead of one, after losing a day to having one (2026-07-29)
+
+- **Cause, recorded plainly.** A throwaway probe script written during the boss
+  -depth work required `lib/state` *before* setting `IDLE_RPG_HOME`. `paths.js`
+  resolves `STATE_DIR` at require time, so the env var came too late and the
+  probe's `saveState` wrote a fresh level-1 knight over the live hero. Five
+  levels, the XP and the gold behind them, and the kill counters went with it.
+  `test/state.test.js` has carried the warning in a comment since the beginning
+  — *"must be set before requiring lib/paths"*
+- **What made it expensive was the backup policy, not the mistake.**
+  `state.bak.json` refreshed on a 24h clock, so it was 22 hours stale when it
+  was needed, and it was the *only* copy — no Time Machine destination on the
+  machine and no user-data APFS snapshots. Gear survived (the backup plus the
+  events still queued in the inbox); the levels did not
+- **Four generations an hour apart, rather than a shorter single roll.** The
+  distinction that decided it: the damaging write produced a **valid** save.
+  Corruption is the case a single backup handles well, because the load path can
+  see it and step back; a valid overwrite is invisible to every check the game
+  has, so the only defence is more than one step back. A one-hour single roll
+  would have made this cost an hour instead of a day, and would still have been
+  defeated by two bad saves in a row
+- **The roll is on a clock, not on a save count.** The statusline saves about
+  once a second and a catch-up fold saves in bursts, so counting saves would
+  roll the whole window out in about a minute — which is the same as having no
+  history at all. Cost on the overwhelming majority of saves is one `statSync`
+- **An existing `state.bak.json` is adopted as generation 1**, not written past:
+  on an installed copy it is a real recovery point, and the first roll would
+  otherwise step straight over it. `saveFiles()` still lists both shapes, so
+  `reset`'s promise of "forever" keeps covering everything on disk
+- **Recovery now walks outward** from `state.bak.1.json` instead of trying one
+  file: whatever corrupted the live save can have been copied into the newest
+  generation before anyone noticed, which is exactly when the next one back is
+  the thing you want
+- **The pre-migration snapshot stays separate and is now better justified.**
+  More generations *shortens* the window in which pre-migration bytes survive
+  the roll, so folding `state.v<N>.json` into the generations would have made
+  the case it exists for worse rather than better
+- **Tests:** 4 new in `state.test.js` — the window steps back one generation per
+  interval and drops the oldest (and does *not* move for saves inside the
+  interval); a corrupt newest generation is stepped over rather than surrendered
+  to, with the live save unreadable too; a pre-generational backup is adopted;
+  and a reset takes every generation with it
+
 ### Bosses swing deeper, for one number each (2026-07-29)
 
 - **The costed middle option, taken.** `todo.md` carried two versions of

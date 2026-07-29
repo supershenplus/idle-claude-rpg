@@ -33,13 +33,104 @@ test('save + load round-trips atomically (no tmp left behind)', () => {
 
 test('corrupt state falls back to backup, quarantines the bad file', () => {
   const s = E.newState('wizard', 'Backup', T0);
-  S.saveState(s);          // also creates bak on first save
-  assert.ok(fs.existsSync(P.bakFile), 'backup exists');
+  S.saveState(s);          // also creates the first generation on first save
+  assert.ok(fs.existsSync(P.bakGen(1)), 'backup exists');
   fs.writeFileSync(P.stateFile, '{"version":1,"hero":{TRUNCATED');
   const loaded = S.loadState();
   assert.ok(loaded, 'recovered from bak');
   assert.strictEqual(loaded.hero.name, 'Backup');
   assert.ok(fs.readdirSync(HOME).some(f => f.startsWith('state.corrupt-')), 'quarantined');
+});
+
+// ---- rolling backups ----
+//
+// The single 24h backup was replaced after a mistaken write cost a day of
+// progress. What matters is not that a backup exists — it always did — but that
+// there is more than one step back, because the write that did the damage
+// produced a perfectly *valid* save. Nothing in the load path can detect that,
+// so depth of history is the only defence there is.
+
+// The roll is driven entirely by the newest generation's mtime, so ageing it is
+// the whole lever. Two hours because the interval is one.
+function ageNewest() {
+  const old = (Date.now() - 2 * 60 * 60 * 1000) / 1000;
+  fs.utimesSync(P.bakGen(1), old, old);
+}
+
+function saveAs(name) {
+  const s = E.newState('wizard', name, T0);
+  S.saveState(s);
+  return s;
+}
+
+// Which hero is sitting in each generation, newest first, '-' for an empty slot.
+function generations() {
+  const names = [];
+  for (let n = 1; n <= P.BAK_GENERATIONS; n++) {
+    try { names.push(JSON.parse(fs.readFileSync(P.bakGen(n), 'utf8')).hero.name); }
+    catch (_) { names.push('-'); }
+  }
+  return names;
+}
+
+test('backups step back one generation per interval, oldest dropped', () => {
+  saveAs('A');
+  assert.deepStrictEqual(generations(), ['A', '-', '-', '-'], 'first save takes the first slot');
+  // Within the interval nothing moves, however many times the game saves — the
+  // statusline saves about once a second, and counting saves instead of time
+  // would roll the whole window out in about a minute.
+  saveAs('B');
+  assert.deepStrictEqual(generations(), ['A', '-', '-', '-'], 'a save inside the interval rolled');
+  for (const name of ['B', 'C', 'D']) { ageNewest(); saveAs(name); }
+  assert.deepStrictEqual(generations(), ['D', 'C', 'B', 'A']);
+  // And the window is bounded: the oldest falls off rather than accumulating.
+  ageNewest();
+  saveAs('E');
+  assert.deepStrictEqual(generations(), ['E', 'D', 'C', 'B'], 'the window did not slide');
+});
+
+test('a corrupt newest generation is stepped over, not surrendered to', () => {
+  saveAs('Older');
+  ageNewest();
+  saveAs('Newer');
+  assert.deepStrictEqual(generations(), ['Newer', 'Older', '-', '-']);
+  // The live save and the newest backup both unreadable — the case a single
+  // backup has no answer for at all.
+  fs.writeFileSync(P.stateFile, '{"version":1,"hero":{TRUNCATED');
+  fs.writeFileSync(P.bakGen(1), 'not json either');
+  const loaded = S.loadState();
+  assert.ok(loaded, 'gave up with a good generation still on disk');
+  assert.strictEqual(loaded.hero.name, 'Older', 'recovered from the wrong generation');
+});
+
+test('a pre-generational backup is adopted rather than written past', () => {
+  // What an install from before the generations looks like: one `state.bak.json`
+  // and no numbered files. It is a real recovery point and the first roll must
+  // not step over it.
+  const legacy = E.newState('knight', 'Legacy', T0);
+  fs.writeFileSync(P.bakFile, JSON.stringify(legacy));
+  const old = (Date.now() - 48 * 60 * 60 * 1000) / 1000;
+  fs.utimesSync(P.bakFile, old, old);
+
+  saveAs('Now');
+  assert.deepStrictEqual(generations(), ['Now', 'Legacy', '-', '-']);
+  assert.ok(!fs.existsSync(P.bakFile), 'the old file was copied instead of adopted');
+});
+
+test('a reset takes every generation with it', () => {
+  saveAs('A');
+  for (const name of ['B', 'C', 'D']) { ageNewest(); saveAs(name); }
+  fs.writeFileSync(P.bakFile, '{}');   // and a legacy one alongside them
+  const files = S.saveFiles();
+  for (let n = 1; n <= P.BAK_GENERATIONS; n++) {
+    assert.ok(files.includes(P.bakGen(n)), `generation ${n} would survive a reset`);
+  }
+  assert.ok(files.includes(P.bakFile), 'the pre-generational backup would survive a reset');
+  // `reset` promises "forever", so what it misses is a playable hero left on
+  // disk after the player asked for one to be gone.
+  for (const f of files) { try { fs.unlinkSync(f); } catch (_) { /* absent */ } }
+  const left = fs.readdirSync(HOME).filter(f => f.startsWith('state.'));
+  assert.deepStrictEqual(left, [], `saves left behind: ${left}`);
 });
 
 test('unknown version is rejected (no backup → null)', () => {
@@ -340,13 +431,15 @@ test('a migrated save keeps the original bytes under its old version', () => {
   assert.strictEqual(st.version, 2);
   assert.strictEqual(fs.readFileSync(snapshot, 'utf8'), raw, 'the pre-migration bytes were not kept');
 
-  // The scenario from the finding: bak is a day stale, so the next save
-  // overwrites it with post-migration contents. The snapshot must not move.
+  // The scenario from the finding: the newest generation is stale, so the next
+  // save rolls post-migration contents into it. The snapshot must not move —
+  // and with generations it has *more* to outlive, since every one of them
+  // rolls over to post-migration bytes within the window.
   S.saveState(st);
   const old = Date.now() - 48 * 60 * 60 * 1000;
-  fs.utimesSync(P.bakFile, old / 1000, old / 1000);
+  fs.utimesSync(P.bakGen(1), old / 1000, old / 1000);
   S.saveState(st);
-  assert.strictEqual(JSON.parse(fs.readFileSync(P.bakFile, 'utf8')).version, 2,
+  assert.strictEqual(JSON.parse(fs.readFileSync(P.bakGen(1), 'utf8')).version, 2,
     'the stale backup should have been refreshed — the test is not exercising the case');
   assert.strictEqual(fs.readFileSync(snapshot, 'utf8'), raw, 'the snapshot followed the backup');
 

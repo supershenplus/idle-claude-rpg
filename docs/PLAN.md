@@ -38,7 +38,7 @@ Hot-path rule: `rpg-hook.js` requires only `paths.js`+`classify.js` to append, l
 
 ## State & concurrency
 
-`~/.config/idle-claude-rpg/`: `state.json` (canonical), `state.bak.json` (daily backup), `events.ndjson` (append-only inbox), `events.processing` (fold-in-progress), `state.lock`.
+`~/.config/idle-claude-rpg/`: `state.json` (canonical), `state.bak.1..4.json` (rolling hourly backups, newest first; `state.bak.json` is the pre-generational name, adopted on first roll), `events.ndjson` (append-only inbox), `events.processing` (fold-in-progress), `state.lock`.
 
 **state.json** (version field for migrations): `hero {name, class, level, xp, hp, maxHp, gold, zone, unlockedZones}`, `equipment {weapon, offhand, head, chest, back, hands, feet, neck, ring1..ring4}` (v2; v1 saves migrate by item noun), `inventory[]` (cap 20), `monster {id, name, level, hp, maxHp, isBoss}`, `counters {kills, bossKills, killsSinceBoss, zoneKills, commits, pushes, testsPassed, testsFailed, linesWritten, deaths, lastTestXpAt}`, `anim[]` (cap 10, serialized timings), `lastEventAt`.
 
