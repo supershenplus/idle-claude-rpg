@@ -96,6 +96,61 @@ test('failures hurt the hero; knight takes half; death respawns with gold loss',
   assert.ok(s.hero.gold < 1000 + s.counters.goldEarned, 'death tax applied');
 });
 
+// ---- the blows the hero did not provoke ----
+//
+// Reported from play: HP came off the bar with nothing on screen. `test_fail`
+// and `bash_fail` called `hurtHero` and stopped there, never touching the anim
+// queue — so the only monster blow the game drew was the counter, which borrows
+// the hero's animation. A failing test was a number changing and nothing else.
+
+test('a failing test is drawn, not just deducted', () => {
+  for (const e of ['test_fail', 'bash_fail']) {
+    const s = fresh();
+    const hp0 = s.hero.hp;
+    E.fold(s, [ev(e, T0 + 1000)], T0 + 1000);
+    const blow = s.anim.find(a => a.type === 'mhit');
+    assert.ok(blow, `${e}: took HP off the hero with no frame on screen`);
+    assert.strictEqual(blow.data.dmg, hp0 - s.hero.hp,
+      `${e}: the figure on screen is not the HP that came off`);
+    assert.ok(blow.data.name, `${e}: the blow names no monster`);
+  }
+});
+
+test('the damage drawn is what the class actually took, not what was rolled', () => {
+  // The knight halves incoming damage (`damageTakenMult`), which `hurtHero`
+  // applies after the caller has handed over its number — so a figure passed
+  // through rather than read back would overstate every blow it takes.
+  const s = fresh('knight');
+  const hp0 = s.hero.hp;
+  E.fold(s, [ev('test_fail', T0 + 1000)], T0 + 1000);
+  assert.strictEqual(s.anim.find(a => a.type === 'mhit').data.dmg, hp0 - s.hero.hp);
+});
+
+test('a killing blow leaves the death banner rather than a blow nobody survived', () => {
+  const s = fresh();
+  s.hero.hp = 1;
+  s.hero.gold = 1000;
+  E.fold(s, [ev('test_fail', T0 + 1000)], T0 + 1000);
+  assert.strictEqual(s.counters.deaths, 1, 'the blow did not kill');
+  assert.ok(s.anim.some(a => a.type === 'death'), 'no death banner');
+  // The respawn puts HP back to full, so there is no honest figure to draw —
+  // and `♥-0` under a corpse-to-be reads as a blow that did nothing.
+  assert.ok(!s.anim.some(a => a.type === 'mhit'), 'a blow was drawn over the death');
+});
+
+test('a burst of failures coalesces instead of saturating the queue', () => {
+  // Same reasoning as the hero's hits: 50 blows at 1500ms each would push every
+  // real event past ANIM_MAX_AHEAD_MS and out of the queue entirely.
+  const s = fresh('knight');
+  s.hero.maxHp = s.hero.hp = 1e6;              // survive the whole burst
+  const events = [];
+  for (let i = 0; i < 40; i++) events.push(ev('bash_fail', T0 + 1000 + i));
+  E.fold(s, events, T0 + 1000);
+  const blows = s.anim.filter(a => a.type === 'mhit');
+  assert.strictEqual(blows.length, 1, `${blows.length} separate blows queued for one burst`);
+  assert.ok(blows[0].data.dmg > 0, 'the coalesced blow lost its damage');
+});
+
 test('monsters retaliate while the hero attacks, without any failed command', () => {
   // The bug this guards: damage used to arrive only via test_fail/bash_fail, so
   // a clean session meant the monster never touched you.

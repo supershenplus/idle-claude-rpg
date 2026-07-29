@@ -19,6 +19,62 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### The monster gets a swing, and a reason to flinch (2026-07-29)
+
+- **Found in play: some monster blows were drawn as nothing at all.** `test_fail`
+  and `bash_fail` called `hurtHero` and stopped there, never touching the anim
+  queue — so a failing test took HP off the bar and put nothing on screen. The
+  only monster blow the scene had ever drawn was the counter, and that one
+  borrows the hero's animation to show a number in the gap. One combatant was
+  scripted frame by frame; the other stood still through its own blows and
+  through yours
+- **The two halves were one design problem.** "What it looks like when a monster
+  hits" and "what it looks like when a monster *is* hit" share the impact frame,
+  the corpse path they both have to not fight, and a right-edge reserve the
+  layout had never needed — because until now nothing on the monster's side of
+  the scene moved. They landed together and are ~40 lines of script between them
+- **Displacement, not art, for all 28.** `monsterAttack` is one six-frame script
+  (wind up two cells, lunge three, recover) and `MONSTER_FLINCH` is three frames
+  of knockback, both applied to whatever sprite is standing there. One sign
+  convention — positive is toward the hero — covers a lunge, a recoil and a
+  flinch. Per-monster attack art stays deferred to the boss item in `todo.md`,
+  which is what the six bosses are actually for
+- **The mark is `gapMarks` run backwards**, with the head starting against the
+  monster and the trail streaming out to its right. Its glyphs (`◄╍`) are
+  deliberately ones nothing else draws: monsters face left, so ◀ is the obvious
+  head and half the roster already wears one as a maw — a mark built from art
+  glyphs reads as a piece of the monster that came loose, and is untestable
+  besides. `sprites.test.js` holds the whole set apart
+- **`♥-N`, not `↩-N`.** The counter's arrow means "in answer to yours" and an
+  unprovoked blow is not one. `♥` is the glyph the vitals line already spends on
+  HP, so the new mark needed no new vocabulary
+- **The flash is yellow because both combatants share a line.** A struck monster
+  lights up in the colour of the damage figure hitting it — and *not* red, which
+  in the big HUD is drawn on the same physical rows and already means "the hero
+  is taking damage". Colour is also the only half of the flinch that survives the
+  compact HUD, where two cells of shift on a 3-cell sprite is not legibly motion
+- **Two things that had to be derived rather than written down.** `MAX_RECOIL`
+  now folds in the hero-knockback the monster's script applies, so the left
+  margin cannot be outgrown by a blow the hero didn't throw; and
+  `MAX_MONSTER_BACK` is its right-edge counterpart — a different kind of edge,
+  where nothing throws and `R.fit` just trims the line, so a knocked-back boss
+  quietly loses its last columns. Both are computed from the scripts
+- **The gap is measured to where the monster is *drawn*, not to its mark.** A
+  lunge closes the gap it is reaching across, and marks measured against the home
+  column get butted aside by `row.put` on exactly the two art rows that carry
+  them — a shear, not a collision, and it looks like bad art. The nameplate goes
+  the other way and stays on the mark, so it doesn't shuffle under a reeling
+  sprite
+- **Compact hangs the monster's mark from the monster.** It ignores `flightCol`
+  by design (mark and figure share one row), so travel is carried by the trail
+  lengthening — which makes *which end it grows from* the only thing left saying
+  which way the blow is going. Pinned to the hero it read as a blow that had
+  already arrived a frame before it was thrown
+- 17 new tests (`sprites`, `engine`, `statusline`) and a `struck` demo scene; 330
+  pass. The engine tests pin the figure to the HP that actually came off — the
+  knight halves incoming damage after the caller hands over its number — and that
+  a killing blow leaves the death banner rather than `♥-0` under a corpse-to-be
+
 ### The swings that miss (2026-07-29)
 
 - **A dodge needed something to represent, and the roll was already there.**

@@ -163,7 +163,35 @@ function main(stdin) {
   // recoil, and where its projectile has got to this frame. Classes without one
   // get `null` here and keep the generic mark that grows out of the gap.
   const atk = anim && anim.type === 'hit' ? sprites.attackFrame(h.class, frame) : null;
-  const recoil = atk ? atk.back : 0;
+  // The monster's own blow (`sprites.monsterAttack`), which has no class and no
+  // pose art — one displacement per frame, applied to whichever of the 28
+  // sprites happens to be standing there. It drives the hero back too, so the
+  // recoil field is shared: on any given frame at most one of the two is live.
+  const mAtk = anim && anim.type === 'mhit' ? sprites.monsterAttackFrame(frame) : null;
+  const recoil = atk ? atk.back : (mAtk ? mAtk.hero : 0);
+
+  // And the other side of the same exchange: what the monster does when the
+  // hero's blow lands on it. Reckoned in frames *since* impact so it stays in
+  // step with a class that lands on a different one, and confined to `hit`
+  // anims — the corpse the kill swaps in must not be seen flinching.
+  const hitLandsOn = sprites.hitFrame(h.class);
+  const struck = anim && anim.type === 'hit' && frame >= hitLandsOn
+    ? sprites.monsterFlinchFrame(frame - hitLandsOn)
+    : null;
+  // Positive is toward the hero. A flinch belongs to the hero's hit anim and a
+  // lunge to the monster's own, so this is a sum of one term either way — but
+  // writing it as a sum is what makes the sign convention hold if that changes.
+  const monShove = (mAtk ? mAtk.shove : 0) + (struck ? struck.shove : 0);
+  // The sprite lights up in the colour of the number that is hitting it. Yellow
+  // rather than red on purpose: in the big HUD both combatants are drawn on the
+  // same physical lines, and red already means "the hero is taking damage"
+  // there. A crit says so with `✦-N!` and does not need a second channel.
+  //
+  // Empty rows pass through untouched, exactly as `tint` does: `bigMonster` pads
+  // a monster with no big art out to BIG_ROWS with blank strings, and colouring
+  // one leaves a zero-width pair of escapes that `keepIndent` cannot trim off
+  // the end of the line — the line then has trailing whitespace before them.
+  const monTint = s => (s && struck && struck.flash ? R.c('brightYellow', s) : s);
 
   // Taking one is drawn as a colour rather than a pose. The hero has four
   // classes and every one of them is mid-attack when the blow arrives — a
@@ -176,8 +204,12 @@ function main(stdin) {
   // for the whole of a death. Alternating two reds rather than holding one:
   // the HUD is redrawn about once a second, so a viewer sees isolated frames,
   // and a flat wash would be indistinguishable from a hero who simply is red.
-  const landedOn = anim && anim.type === 'hit' && frame >= sprites.hitFrame(h.class);
-  const hurt = !!anim && (anim.type === 'death' || (landedOn && anim.data.counter > 0));
+  const landedOn = anim && anim.type === 'hit' && frame >= hitLandsOn;
+  // The unprovoked blow reddens the hero on exactly the same terms: from the
+  // frame it lands, which is also the frame its figure appears in the gap.
+  const struckHero = !!anim && anim.type === 'mhit' && frame >= sprites.MONSTER_HIT_FRAME;
+  const hurt = !!anim
+    && (anim.type === 'death' || (landedOn && anim.data.counter > 0) || struckHero);
 
   // The other half of the same roll: the monster swung and missed. The engine
   // only ever tags this when nothing landed on that record (`engine.retaliate`),
@@ -214,7 +246,39 @@ function main(stdin) {
   // instead of stalling three cells out of the bow. The trail follows the head
   // rather than reaching back to the bow, and the whole mark still ends inside
   // `cells`, so the monster stays in column either way.
+  // Exact while it fits, `fmt` when it doesn't. Shared by both directions of the
+  // gap because the ceiling problem is: `enqueue` coalesces either kind of blow.
+  const num = (n, room) => {
+    const exact = String(Math.max(0, Math.round(n || 0)));
+    return exact.length <= room ? exact : R.fmt(Math.max(0, n || 0));
+  };
+
+  // The monster's blow crossing the gap: the same mark as the hero's, run
+  // backwards. The head starts against the monster and arrives at the hero, so
+  // the trail streams out to its *right*, and the figure underneath is what came
+  // off the hero — `♥-N`, the glyph the vitals line already spends on HP, rather
+  // than the counter's `↩-N`, which means "in answer to yours" and this is not.
+  function monsterMarks(cells) {
+    let flight = '';
+    let flightCol = 0;
+    if (mAtk && mAtk.fly != null) {
+      // Mirror of the hero's flight: the head travels the gap less its own
+      // width so it lands *against* the hero rather than half inside it, and
+      // fly 1 is the hero's end, which is column 0.
+      const span = Math.max(0, cells - R.width(sprites.MONSTER_PROJ));
+      const head = Math.round((1 - mAtk.fly) * span);
+      const tail = Math.max(0, Math.min(3, span - head));
+      flightCol = head;
+      flight = R.fit(sprites.MONSTER_PROJ + sprites.MONSTER_TRAIL.repeat(tail), cells - head);
+    }
+    const dmg = frame >= sprites.MONSTER_HIT_FRAME
+      ? R.c('brightRed', R.fit(`♥-${num(anim.data.dmg, cells - 2)}`, cells))
+      : '';
+    return { flight, flightCol, dmg, counter: '' };
+  }
+
   function gapMarks(cells) {
+    if (anim && anim.type === 'mhit') return monsterMarks(cells);
     if (!anim || anim.type !== 'hit') return { flight: '', flightCol: 0, dmg: '', counter: '' };
     const d = anim.data;
     let flightCol = 0;
@@ -234,11 +298,7 @@ function main(stdin) {
       flightCol = head - tail;
       flight = R.fit(heroArt.trail.repeat(tail) + heroArt.proj, cells - flightCol);
     }
-    const num = (n, room) => {
-      const exact = String(Math.max(0, Math.round(n || 0)));
-      return exact.length <= room ? exact : R.fmt(Math.max(0, n || 0));
-    };
-    const landed = frame >= sprites.hitFrame(h.class);
+    const landed = frame >= hitLandsOn;
     const dmg = landed
       ? R.c(d.crit ? 'brightRed' : 'brightYellow',
         R.fit(`✦-${num(d.dmg, cells - (d.crit ? 3 : 2))}${d.crit ? '!' : ''}`, cells))
@@ -266,25 +326,50 @@ function main(stdin) {
   if (mode === 'compact') {
     const monster = dead ? sprites.DEAD_MONSTER : (mon.sprite || '(?)');
     const mid = Math.floor(cols / 2);
-    const monLeft = R.centerAt(monster, mid);
+    // Home is the mark the monster is centred on and returns to; `monDraw` is
+    // where this frame actually puts it. Everything else in the scene — the
+    // hero, the gap, the nameplate — is measured from home, so a lunge or a
+    // knockback moves one sprite instead of shunting the whole layout.
+    const monHome = Math.min(R.centerAt(monster, mid),
+      Math.max(0, cols - R.width(monster) - sprites.MAX_MONSTER_BACK));
+    const monDraw = Math.max(0, monHome - monShove);
     // Compact puts flight and damage on one line, so they share the gap: the
     // marks start a column in from the hero and stop a column short of the
-    // monster.
-    const g = gapMarks(HERO_GAP - 2);
+    // monster — of where it is *drawn*, so a lunge forward is not met by the
+    // mark it is carrying. `row.put` butts overlapping text on with a space
+    // rather than overlapping it, so a collision here would slide the sprite
+    // off the terminal midpoint rather than looking like a collision.
+    const markLeft = Math.max(LEFT_MIN, monHome - HERO_GAP + 1);
+    const cells = Math.max(1, monDraw - markLeft - 1);
+    const g = gapMarks(cells);
     // Compact has one row and no pose art, so the recoil is all it takes from a
     // scripted attack. It ignores `flightCol` deliberately — the projectile and
     // the damage number share this row, so a head that crossed the gap would
     // shove the number off the end of it — and the lengthening trail carries the
     // shot instead.
+    //
+    // Which end the trail lengthens *from* is then the only thing left saying
+    // which way the blow is going, so the two directions hang from opposite
+    // ends: the hero's mark grows out of the hero, and the monster's is pinned
+    // against the monster so its head advances on the hero as it grows. Pinned
+    // the other way it read as a blow that had already arrived on the frame
+    // before it was thrown. The figure stays at the hero's end either way —
+    // `♥-N` is the hero's HP wherever the blow came from.
+    //
+    // Pinning to `monDraw` rather than to the mark also rides the arm: the whole
+    // reach gives a cell back as the lunge recovers. That is the thing being
+    // drawn, so it stays.
     // One row of hero can't bend, so compact spends the whole lean on moving it:
     // the deepest row of DODGE_LEAN is how far the body got out of the way.
     const lean = dodged ? Math.max(...sprites.DODGE_LEAN) : 0;
+    const marks = mAtk
+      ? (g.flight ? R.spread(g.dmg, g.flight, cells) : g.dmg)
+      : g.flight + (g.dmg ? ' ' + g.dmg : '');
     const scene = R.row()
       .put(tint(heroArt.idle),
-        Math.max(0, Math.max(LEFT_MIN, monLeft - HERO_GAP - R.width(heroArt.idle)) - recoil - lean))
-      .put(R.fit(g.flight + (g.dmg ? ' ' + g.dmg : ''), HERO_GAP - 2),
-        Math.max(LEFT_MIN, monLeft - HERO_GAP + 1))
-      .put(monster, monLeft)
+        Math.max(0, Math.max(LEFT_MIN, monHome - HERO_GAP - R.width(heroArt.idle)) - recoil - lean))
+      .put(R.fit(marks, cells), markLeft)
+      .put(monTint(monster), monDraw)
       .toString();
     const info = R.row().put(bannerText() || infoText(), 2).toString();
     out = [line1, scene, info, tickerLine()];
@@ -302,17 +387,28 @@ function main(stdin) {
     // MAX_RECOIL is reserved to the hero's left at every width. Clamping the
     // flinch instead would make it fade out as the terminal narrowed — and the
     // clamp binds exactly at the widths where the scene is already tightest.
-    const monLeft = Math.max(LEFT_MIN + sprites.MAX_RECOIL + heroW + HERO_GAP,
-      Math.round(mid - monW / 2));
-    const heroHome = Math.max(LEFT_MIN, monLeft - HERO_GAP - heroW);
+    //
+    // MAX_MONSTER_BACK is the same reservation against the right-hand edge, and
+    // it is a different kind of edge: nothing throws an error there, `R.fit`
+    // just trims the line and a knocked-back boss silently loses its last two
+    // columns. The reserve gives way to the hero's margin at widths too narrow
+    // to honour both, because the left one is the one holding the scene up.
+    const monHome = Math.max(LEFT_MIN + sprites.MAX_RECOIL + heroW + HERO_GAP,
+      Math.min(Math.round(mid - monW / 2), cols - monW - sprites.MAX_MONSTER_BACK));
+    const monDraw = Math.max(0, monHome - monShove);
+    const heroHome = Math.max(LEFT_MIN, monHome - HERO_GAP - heroW);
     const heroLeft = Math.max(0, heroHome - recoil);
     // Anchored to where the hero stands, not to where it has been shoved: the
     // arrow has already left the bow, and marks that slid back with the recoil
     // would drag the damage number along with them.
     const gapLeft = heroHome + heroW + 2;
     // Derived from the layout rather than written down: the widest mark starts
-    // at gapLeft + 1 and has to stop a column short of the monster art.
-    const g = gapMarks(monLeft - gapLeft - 2);
+    // at gapLeft + 1 and has to stop a column short of the monster art — of
+    // where that art is *drawn* this frame, not of its mark. A monster lunging
+    // forward closes the gap it is reaching across, and marks measured against
+    // its home column would be butted aside by `row.put` on exactly the two art
+    // rows that carry them, which is a shear rather than a collision.
+    const g = gapMarks(Math.max(1, monDraw - gapLeft - 2));
 
     // Each art row is centred inside its own block, so ragged sprite lines
     // (a 3-cell hat over a 9-cell body) still stack straight.
@@ -334,14 +430,17 @@ function main(stdin) {
       if (i === waist - 1 && g.counter) r.put(g.counter, gapLeft + 2);
       if (i === waist && g.flight) r.put(g.flight, gapLeft + g.flightCol);
       if (i === waist + 1 && g.dmg) r.put(g.dmg, gapLeft + 1);
-      r.put(mLine, monLeft + Math.round((monW - R.width(mLine)) / 2));
+      r.put(monTint(mLine), monDraw + Math.round((monW - R.width(mLine)) / 2));
       art.push(r.toString());
     }
 
     // The banner is scene-wide so it centres on the terminal; the info row is
     // the monster's nameplate, so it centres on the monster rather than drifting
     // left with the hero when a narrow terminal clamps the layout.
-    const monMid = monLeft + monW / 2;
+    // Centred on the monster's mark, not on where this frame shoved it: a
+    // nameplate that shuffled sideways under a flinching sprite would read as
+    // the layout coming apart rather than as the monster moving.
+    const monMid = monHome + monW / 2;
     const banner = bannerText();
     const infoRow = banner
       ? R.row().put(banner, R.centerAt(banner, mid)).toString()

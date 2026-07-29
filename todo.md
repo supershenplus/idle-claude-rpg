@@ -13,36 +13,28 @@ this file stays readable as a list of things to do.
 
 ## Found in play — 2026-07-28
 
-- [ ] **Some monster blows are drawn as nothing at all.** Fell out of chasing the
-      counter-hit ordering bug (fixed, see `BUILD-LOG.md`) and is the *other* half
-      of that report — the half that turned out to be real. `test_fail` and
-      `bash_fail` call `hurtHero` directly (`lib/engine.js:665,668`) without ever
-      calling `enqueue`, so a failing test or a failing command takes HP off the
-      hero and puts nothing on screen. Only the counter path
-      (`retaliate` → folded onto the hero's `hit`) has any frame at all, and it
-      borrows the hero's. So the game has no monster attack animation in any form
-- [ ] Which makes this the same open question as the flinch item below, from the
-      other side: that one asks what it looks like when a monster is *hit*, this
-      one asks what it looks like when a monster *hits*. They share the impact
-      frame, the reserved-room problem against the right edge, and the corpse
-      path they both have to not fight — so they want designing together even if
-      they land separately. Cheapest sketch that covers all 28: a shove *left*
-      (mirror of the hero's recoil) plus a mark travelling right-to-left in the
-      gap, which is `gapMarks` run backwards and needs no new art
 - [ ] **Bosses should get hand-scripted attacks of their own.** The generic
-      treatment above is what makes the other 22 monsters legible; the six bosses
-      are where per-monster art actually pays for itself, the same way
-      `sprites.attacks.ranger` pays off for the class you play. A wind-up pose, a
-      signature projectile or reach, and a recoil — so Rootfang's swing doesn't
-      read like a leech's. Prerequisites, in order: the generic monster attack
-      above has to exist first (the bosses are the exception to a rule that isn't
-      written yet); `attacks`/`attackFrame`/`MAX_RECOIL` are keyed by class id and
-      would need to take a monster id too, or a second table beside them; and
-      `MAX_RECOIL` reserves room on the *hero's* side only, so the right-edge
-      equivalent is a new constraint the layout has never had. Worth deciding
+      treatment that landed (see `BUILD-LOG.md`) is what makes the other 22
+      monsters legible; the six bosses are where per-monster art actually pays
+      for itself, the same way `sprites.attacks.ranger` pays off for the class
+      you play. A wind-up pose, a signature projectile or reach, and a recoil —
+      so Rootfang's swing doesn't read like a leech's. Two of the three
+      prerequisites are now closed: the generic attack exists (bosses are the
+      exception to a rule that is finally written down), and the right-edge
+      reserve exists as `MAX_MONSTER_BACK`. What's left is that `monsterAttack`
+      is a single table with no key at all, so a per-boss script means keying it
+      by monster id and deciding what an unkeyed monster falls back to —
+      `attackFrame`'s `null`-means-generic shape is the precedent. Worth deciding
       early whether a boss script is a full `frames` array like the ranger's or
-      just a pose swap on the impact frame — six hand-drawn sequences is a real
+      just a pose swap on the impact frame: six hand-drawn sequences is a real
       art budget, and the ranger's took a solver to align
+- [ ] A cheaper middle option the generic script opened up and nobody has costed:
+      keep one shared `frames` array and give each boss only a *depth* — how far
+      it lunges, how long it holds. Rootfang heaving forward four cells over two
+      frames against a leech's two-cell jab is already most of the difference in
+      how a blow reads, and it is one number per boss rather than five rows of
+      art. Probably not enough on its own; possibly enough to tell whether the
+      full version is worth the budget
 
 ---
 
@@ -108,27 +100,19 @@ this file stays readable as a list of things to do.
 - [ ] One-line sprites in `lib/content.js` are still the original kaomoji — only
       the 5-row big art was redrawn in v1.2, so compact and mini HUD modes never
       got the pass
-- [ ] **Monsters don't react to being hit.** The hero side of a blow is now
-      scripted frame by frame — `sprites.attacks` gives the ranger a release
-      pose, a 3-cell recoil and an arrow that crosses the gap — and the monster
-      just stands there through all of it. The only thing on screen that says
-      the shot connected is the `✦-N` in the gap and the HP bar under the
-      nameplate, so a landed hit and a whiffed one look identical. The impact
-      frame is already known (`sprites.hitFrame(cls)`), so the timing is free;
-      what's open is what a flinch *is*. Roughly in order of cost:
-      (a) shove the whole sprite right a couple of cells on the impact frame —
-      the exact mirror of the hero's recoil, one transform, works for all 28
-      monsters and needs no new art; (b) flash the sprite (dim, or red) for one
-      frame, which is the only option that also reads in the compact HUD where
-      there is one row and no room to move; (c) hand-drawn hurt art, which only
-      pays for itself on the six bosses. (a) and (b) compose and are probably
-      the whole feature. Two things to watch: a knockback needs the same
-      reserved-room treatment `MAX_RECOIL` got for the hero, but against the
-      *right* edge, where the binding constraint is `R.fit` truncating the line
-      rather than column 0; and it must not fight the corpse path — `kill` and
-      `bossdown` already swap in `DEAD_MONSTER_BIG` and pin `anim.data.mon`, so
-      the flinch has to end where the death begins. Pairs with the monster-attack
-      items up top: same impact frame, same right-edge reserve, same corpse path
+- [ ] **The right-edge reserve gives way before the hero's does, and only where
+      it matters most.** `MAX_MONSTER_BACK` keeps two columns clear so a
+      knockback is never trimmed, but the monster's floor column
+      (`LEFT_MIN + MAX_RECOIL + heroW + HERO_GAP` = 34) wins when both can't be
+      honoured. So the reserve holds down to 53 columns; at 52 a knocked-back
+      boss loses a cell to `R.fit` on exactly the frames you hit it, and at 51
+      and below the widest boss is already clipped standing still. Not reachable
+      by accident (`hudFor` picks compact under 76, so it takes a pinned
+      `RPG_HUD=big`) and the scene is over-constrained there anyway — 17 cells of
+      boss, 13 of hero and a 14-cell gap don't fit. A note, not a bug. The
+      honest fix if it ever bites is to narrow `HERO_GAP` under pressure rather
+      than to clamp the flinch, which is the thing the hero's margin exists to
+      avoid doing
 - [ ] **The Grove shelf is legible now, but is it still worth *stocking*?** The
       listing fix landed (option (b), see `BUILD-LOG.md`) so a dead offer says so
       instead of wearing a SALE tag. That closes the trap and deliberately leaves

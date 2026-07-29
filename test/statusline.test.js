@@ -560,6 +560,213 @@ test('a coalesced hit cannot shove the compact monster off its centre', () => {
     'the damage mark pushed the monster off the terminal midpoint');
 });
 
+// ---- the monster's half of the exchange ----
+//
+// Reported from play, and the other half of the counter-ordering report above:
+// HP came off the bar with nothing on screen at all. `test_fail` and `bash_fail`
+// hurt the hero and never touched the anim queue, so the only monster blow the
+// scene ever drew was the counter — which borrows the hero's animation. The
+// monster now has one of its own, and reacts to taking one.
+//
+// Everything here is displacement rather than art: one number per frame for all
+// 28 monsters. Which means the tests are all "did the sprite move by exactly
+// what the script says", and the failure they exist to catch is the sprite
+// moving by *nearly* that — clamped by an edge, or butted aside by a mark.
+
+function atMonsterFrame(cols, frame, data, cls) {
+  return renderAnim(cols, (st, now) => {
+    st.monster = { ...BOSS };
+    st.anim = [{ type: 'mhit', at: now - frame * sprites.FRAME_MS, dur: 1500,
+      data: { dmg: 46, name: BOSS.name, ...data } }];
+  }, 'big', cls);
+}
+
+// Cells the monster has moved *toward* the hero since it was standing on its
+// mark. One displacement for the whole sprite, so disagreement between the art
+// rows is a shear — the failure the marks in the gap can inflict by overrunning
+// (`row.put` butts rather than overlaps) and the one that looks like bad art.
+function monsterShove(out, home) {
+  const moved = monsterColumns(home).map((c, i) => c - monsterColumns(out)[i]);
+  assert.strictEqual(new Set(moved).size, 1, `the monster sprite sheared: ${moved}`);
+  return moved[0];
+}
+
+// 60 is again the width only `RPG_HUD=big` reaches, where the scene is clamped
+// hard — the monster's floor column is pushed right by the hero's own reserved
+// margin, which is exactly where its art can start falling off the far end.
+for (const cols of [100, 76, 60]) {
+  test(`the monster winds up, lunges and returns to its mark at ${cols} columns`, () => {
+    const home = atMonsterFrame(cols, 0);
+    const moved = sprites.monsterAttack.frames
+      .map((_, i) => monsterShove(atMonsterFrame(cols, i), home));
+    assert.deepStrictEqual(moved, sprites.monsterAttack.frames.map(f => f.shove),
+      `the lunge does not match the script — clipped by an edge at ${cols} columns?`);
+    assert.strictEqual(moved[moved.length - 1], 0, 'the monster never returns to its mark');
+  });
+
+  test(`a struck monster is knocked back and recovers at ${cols} columns`, () => {
+    for (const cls of Object.keys(GRIP)) {
+      const landed = sprites.hitFrame(cls);
+      const home = atFrame(cols, 0, {}, cls);
+      for (let f = 0; f < landed; f++) {
+        assert.strictEqual(monsterShove(atFrame(cols, f, {}, cls), home), 0,
+          `${cls}: the monster reels on frame ${f}, before the blow has landed`);
+      }
+      const knocked = sprites.MONSTER_FLINCH
+        .map((_, i) => monsterShove(atFrame(cols, landed + i, {}, cls), home));
+      assert.deepStrictEqual(knocked, sprites.MONSTER_FLINCH.map(f => f.shove),
+        `${cls}: the knockback does not match the script at ${cols} columns`);
+    }
+  });
+}
+
+// `monsterColumns` fails outright on an art row that is not on screen, so it is
+// also the check that nothing was trimmed away — R.fit cuts the end of a line
+// silently, and the failure is a boss quietly losing its last columns on exactly
+// the frames something is happening to it.
+test('nothing on the monster side is trimmed off the right-hand edge', () => {
+  for (const cols of [100, 76, 60]) {
+    for (const [what, out] of [
+      ['wind-up', atMonsterFrame(cols, 1)],
+      ['knockback', atFrame(cols, sprites.hitFrame('ranger'), {})],
+    ]) {
+      for (const line of monsterColumns(out)) {
+        assert.ok(line >= 0, `${what} at ${cols}: the monster art is off the edge`);
+      }
+      assert.doesNotMatch(out.split('\n')[3], /…/,
+        `${what} at ${cols}: an art row was trimmed`);
+    }
+  }
+});
+
+// The raw line — escapes intact — an art row of the monster is drawn on. Row 0
+// carries no marks (they sit on the three middle rows) and the hero's own art
+// row 0 is untinted unless it is hurt, so an escape here is the monster's.
+function monsterLine(out, row) {
+  const art = sprites.bigMonster(BOSS.id, BOSS.sprite)[row];
+  const line = out.split('\n').find(l => R.visible(l).includes(art));
+  assert.ok(line, `monster art row ${row} is not on screen`);
+  return line;
+}
+const LIT = /\x1b\[93m/;   // brightYellow, the colour of the damage figure
+
+test('a struck monster lights up in the colour of the number hitting it', () => {
+  const landed = sprites.hitFrame('ranger');
+  assert.doesNotMatch(monsterLine(atFrame(100, landed - 1, {}), 0), LIT,
+    'the monster lights up before the blow has landed');
+  assert.match(monsterLine(atFrame(100, landed, {}), 0), LIT,
+    'the blow lands and the monster does not react at all');
+  assert.doesNotMatch(monsterLine(atFrame(100, landed + sprites.MONSTER_FLINCH.length, {}), 0), LIT,
+    'the monster is still lit after the flinch is over');
+});
+
+test('a monster with no big art can still be struck', () => {
+  // `bigMonster` pads an unknown id out to BIG_ROWS with blank strings, and
+  // colouring one of those leaves a bare pair of zero-width escapes on the end
+  // of the line — which `keepIndent` cannot trim off, because what precedes them
+  // is whitespace and what follows is not. The line then carries trailing
+  // spaces that nothing downstream will strip either.
+  const out = renderAnim(100, (st, now) => {
+    st.monster = { id: 'notamonster', name: 'Unknown', sprite: '(?)', level: 3, hp: 40, maxHp: 40 };
+    st.anim = [{ type: 'hit', at: now - sprites.hitFrame('ranger') * sprites.FRAME_MS,
+      dur: 1500, data: { dmg: 38, crit: false, counter: 0 } }];
+  });
+  assert.ok(out.includes('(?)'), 'the fallback sprite is not on screen');
+  for (const line of out.trim().split('\n')) {
+    assert.strictEqual(line.trimEnd(), line, `trailing whitespace: ${JSON.stringify(line)}`);
+    assert.doesNotMatch(line, /\x1b\[\d+m\x1b\[0m\s*$/, `an empty row was coloured: ${JSON.stringify(line)}`);
+  }
+});
+
+test('the corpse never flinches', () => {
+  // `kill` and `bossdown` pin their own copy of the monster and swap the corpse
+  // art in. The flinch has to end where the death begins — a dead sprite jogging
+  // sideways under a DEFEATED banner is the one failure mode both features have.
+  const corpse = f => renderAnim(100, (st, now) => {
+    st.monster = { ...BOSS };
+    st.anim = [{ type: 'kill', at: now - f * sprites.FRAME_MS, dur: 2500,
+      data: { name: BOSS.name, xp: 910, gold: 1340, mon: { ...BOSS, hp: 0 } } }];
+  });
+  const first = corpse(0);
+  for (let f = 1; f < 6; f++) {
+    assert.strictEqual(corpse(f), first, `the celebration moves on frame ${f}`);
+  }
+});
+
+test('the unprovoked blow crosses the gap and says what it cost', () => {
+  const landed = sprites.MONSTER_HIT_FRAME;
+  for (let f = 0; f < landed; f++) {
+    assert.doesNotMatch(atMonsterFrame(100, f), /♥-/,
+      `the HP is counted on frame ${f}, before the blow has landed`);
+  }
+  const out = atMonsterFrame(100, landed);
+  assert.match(out, /♥-46/, 'the blow landed without saying what it took');
+  assert.ok(out.includes(sprites.MONSTER_PROJ), 'the blow never crossed the gap');
+  // `↩-N` is the counter — "in answer to yours" — and this is not one.
+  assert.doesNotMatch(out, /↩/, 'an unprovoked blow is drawn as a counter-hit');
+});
+
+test('a blow the hero never provoked still reddens it', () => {
+  const landed = sprites.MONSTER_HIT_FRAME;
+  for (const cls of Object.keys(GRIP)) {
+    assert.doesNotMatch(heroLine(atMonsterFrame(100, landed - 1, {}, cls), cls), REDDENED,
+      `${cls}: hurt before the blow reached it`);
+    assert.match(heroLine(atMonsterFrame(100, landed, {}, cls), cls), REDDENED,
+      `${cls}: took the blow without showing it`);
+  }
+});
+
+test('the blow drives the hero back within its reserved margin', () => {
+  for (const cols of [100, 76, 60]) {
+    const home = columnOf(atMonsterFrame(cols, 0, {}, 'ranger'), BOW);
+    const moved = sprites.monsterAttack.frames
+      .map((_, i) => home - columnOf(atMonsterFrame(cols, i, {}, 'ranger'), BOW));
+    assert.deepStrictEqual(moved, sprites.monsterAttack.frames.map(f => f.hero),
+      `the hero is not driven back as scripted at ${cols} columns`);
+  }
+});
+
+test('a coalesced blow cannot shear the monster sprite', () => {
+  // `enqueue` sums repeated blows onto one anim, so the figure has no ceiling
+  // and can outgrow the gap it lives in — the same overrun as the hero's, from
+  // the other side, and the monster is now moving while it happens.
+  const at = sprites.MONSTER_HIT_FRAME;
+  const baseline = monsterColumns(atMonsterFrame(100, at));
+  for (const dmg of [1234567, 1234567890, 1e18]) {
+    assert.deepStrictEqual(monsterColumns(atMonsterFrame(100, at, { dmg })), baseline,
+      `a blow of ${dmg} pushed the monster art out of column`);
+  }
+});
+
+test('the compact HUD hangs the monster\'s mark from the monster', () => {
+  // Compact ignores `flightCol` — the mark and the figure share one row, so a
+  // head that crossed the gap would shove the figure off the end of it — and
+  // travel is carried by the trail lengthening instead. Which end it grows from
+  // is then the only thing left saying which way the blow is going: pinned to
+  // the hero, the head sits against the hero a frame before it is even thrown.
+  const compact = f => renderAnim(60, (st, now) => {
+    st.monster = { ...BOSS, sprite: '(#)' };
+    st.anim = [{ type: 'mhit', at: now - f * sprites.FRAME_MS, dur: 1500,
+      data: { dmg: 46, name: BOSS.name } }];
+  }, 'compact');
+  //
+  // Pinned to the monster, the mark also rides the arm: it gives a cell back as
+  // the lunge recovers. That is left alone deliberately — a reach retracting
+  // with the body it belongs to is the thing being drawn — so what is pinned
+  // here is where the blow *starts* and that it genuinely crosses, rather than
+  // a frame-by-frame monotonicity the recovery would break for good reasons.
+  const thrown = sprites.monsterAttack.frames.findIndex(f => f.fly === 0);
+  const at = i => columnOf(compact(i), sprites.MONSTER_PROJ);
+  const from = at(thrown);
+  const to = at(sprites.MONSTER_HIT_FRAME);
+  assert.ok(to < from - 2, `the blow barely crossed the gap: ${from} → ${to}`);
+  const hero = columnOf(compact(thrown), sprites.heroes.ranger.idle);
+  const monster = columnOf(compact(thrown), '(#)');
+  assert.ok(from - hero > monster - from,
+    `the blow is thrown from the hero's end of the gap: ${hero} | ${from} | ${monster}`);
+  assert.match(compact(sprites.MONSTER_HIT_FRAME), /♥-46/, 'compact never says what it cost');
+});
+
 // ---- HUD layout precedence ----
 // Three tiers pick a layout, and the two that aren't width are new: a mode
 // pinned in the save (`/hero hud <mode>`) and $RPG_HUD above it. Line count is

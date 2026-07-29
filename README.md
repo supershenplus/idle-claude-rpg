@@ -29,6 +29,13 @@ the ranger looses and recoils. Whatever leaves the sprite is what crosses the
 gap. Take a counter-swing and the hero washes red; slip one and it ghosts and
 leans out of the blow, head furthest, feet planted.
 
+The monster gets a swing back. A failing test or a failing command is drawn as a
+lunge — wind up, come forward, mark crossing the gap right-to-left, `♥-46` for
+what it cost — instead of HP quietly leaving the bar, which is what it used to
+be. And it reels when you connect: knocked back two cells and lit up in the
+colour of the number hitting it. One script covers all 28 monsters, so the six
+bosses stay the place hand-drawn attack art would be worth the budget.
+
 See it without installing anything — every scene, drawn by the real renderer:
 
 ```sh
@@ -290,6 +297,12 @@ exactly one random number whichever way it reads, and `test/sim.js` prints byte
 -identical output with it on. The band exists so the tell stays worth watching;
 calling *every* unanswered attack a dodge would mean 70% of hits, at which point
 the hero is perpetually mid-lean and it says nothing.
+
+The two blows in that table that are *not* answers to yours — a failing test, a
+command that came back non-zero — are drawn as the monster's own lunge, marked
+`♥-N` rather than the counter's `↩-N`, because `↩` means "in answer to yours".
+They used to be the one thing in the game that changed a number and drew nothing
+at all.
 
 ### The War Horn is detected from git, not from the hook
 

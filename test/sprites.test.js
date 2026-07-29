@@ -210,6 +210,92 @@ test('every scripted attack frame names a pose its class actually has', () => {
   }
 });
 
+// ---- the monster's half ----
+//
+// One script for 28 monsters, so there is no per-monster case to check — what
+// there is instead is a set of invariants the hero's four scripts each get
+// checked against individually, and which this one has to satisfy alone.
+
+test('the monster opens and closes its swing on its own mark', () => {
+  const f = S.monsterAttack.frames;
+  for (const [when, fr] of [['opens', f[0]], ['closes', f[f.length - 1]]]) {
+    assert.strictEqual(fr.shove, 0, `${when} ${fr.shove} cells off its mark`);
+    assert.strictEqual(fr.hero, 0, `${when} with the hero already driven back`);
+    assert.strictEqual(fr.fly, null, `${when} with a blow already in the gap`);
+  }
+  assert.ok(f.some(fr => fr.shove > 0), 'the monster never comes forward at all');
+  assert.ok(f.some(fr => fr.shove < 0), 'the monster swings with no wind-up');
+  assert.strictEqual(S.MONSTER_FLINCH[S.MONSTER_FLINCH.length - 1].shove, 0,
+    'a flinch leaves the monster standing off its mark');
+});
+
+test("the monster's blow crosses the gap toward the hero and arrives", () => {
+  const fly = S.monsterAttack.frames.map(f => f.fly).filter(v => v != null);
+  assert.ok(fly.length >= 2, 'the blow is on screen for one frame');
+  for (let i = 1; i < fly.length; i++) {
+    assert.ok(fly[i] >= fly[i - 1], `the blow travelled backwards: ${fly}`);
+  }
+  assert.ok(fly[0] < 1, 'the blow is already home on the frame it is thrown');
+  assert.strictEqual(fly[fly.length - 1], 1, `the blow never arrives: ${fly}`);
+  assert.strictEqual(S.monsterAttack.frames[S.MONSTER_HIT_FRAME].fly, 1,
+    'the HP comes off on a frame where the blow has not landed');
+});
+
+// Same reasoning as the hero's projectile: the mark is anchored to the blow's
+// position in the gap, so a head wider than a cell runs out of room first.
+test("the monster's mark is a single cell and belongs to nothing else", () => {
+  for (const [what, ch] of [['head', S.MONSTER_PROJ], ['trail', S.MONSTER_TRAIL]]) {
+    assert.strictEqual(R.width(ch), 1, `${what} ${JSON.stringify(ch)} is not 1 cell`);
+  }
+  // Monsters face left, so ◀ is the obvious head and half the roster already
+  // wears one as a maw — a mark drawn from glyphs the art uses reads as a piece
+  // of the monster that came loose, and is untestable besides.
+  const drawn = new Set();
+  for (const art of [...Object.values(S.heroesBig), ...Object.values(S.monstersBig),
+    ...Object.values(S.heroPoses).flatMap(p => Object.values(p)), S.DEAD_MONSTER_BIG]) {
+    for (const row of art) for (const ch of row) drawn.add(ch);
+  }
+  for (const h of Object.values(S.heroes)) { drawn.add(h.proj); drawn.add(h.trail); }
+  for (const [what, ch] of [['head', S.MONSTER_PROJ], ['trail', S.MONSTER_TRAIL]]) {
+    assert.ok(!drawn.has(ch), `the monster's ${what} ${ch} is also drawn as art somewhere`);
+  }
+});
+
+// The hero's margin is a clamp against column 0; this is the one against the
+// right-hand edge, where nothing throws — R.fit just trims the line and a
+// knocked-back boss quietly loses its last columns.
+test('the reserved margins cover every displacement that can happen', () => {
+  for (const [i, f] of S.monsterAttack.frames.entries()) {
+    assert.ok(-f.shove <= S.MAX_MONSTER_BACK, `attack frame ${i} winds up past the reserve`);
+    assert.ok(f.hero >= 0 && f.hero <= S.MAX_RECOIL, `attack frame ${i} drives the hero past its margin`);
+    assert.ok(f.fly == null || (f.fly >= 0 && f.fly <= 1), `attack frame ${i}: fly out of 0..1`);
+  }
+  for (const [i, f] of S.MONSTER_FLINCH.entries()) {
+    assert.ok(-f.shove <= S.MAX_MONSTER_BACK, `flinch frame ${i} is knocked past the reserve`);
+  }
+  assert.ok(S.MAX_MONSTER_BACK > 0, 'nothing on the monster side moves at all');
+});
+
+// Both scripts are read by frame index off the same 1500ms animation the hero's
+// are, and `monsterAttackFrame` clamps past the end — so frames beyond it are
+// art nobody ever sees. The flinch is the tighter case: it does not start until
+// the hero's blow lands, so it has only the frames left after that one.
+test('neither monster script runs past the animation it plays over', () => {
+  const E = require('../lib/engine');
+  const st = E.newState('wizard', 'Fixture', 1);
+  st.monster.hp = st.monster.maxHp = 1e9;
+  E.monsterStrikes(st, 5, 1);
+  const blow = st.anim.find(a => a.type === 'mhit');
+  assert.ok(blow, 'the engine no longer queues a frame for an unprovoked blow');
+  const budget = Math.ceil(blow.dur / S.FRAME_MS);
+  assert.ok(S.monsterAttack.frames.length <= budget,
+    `${S.monsterAttack.frames.length} frames for a ${blow.dur}ms blow`);
+  for (const cls of Object.keys(S.attacks)) {
+    assert.ok(S.hitFrame(cls) + S.MONSTER_FLINCH.length <= budget,
+      `the ${cls} lands on frame ${S.hitFrame(cls)}, leaving no room for the flinch`);
+  }
+});
+
 test('every class has hero art and a one-line sprite', () => {
   for (const id of Object.keys(C.classes)) {
     assert.ok(S.heroesBig[id], `${id}: no big art`);

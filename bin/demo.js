@@ -136,6 +136,21 @@ const SCENES = {
       return st;
     },
   },
+  // The other direction. Every scene above is the hero swinging; this is the
+  // half the HUD never drew at all — a failing test taking HP off you, which
+  // used to move the bar and put nothing on screen. The monster is mid-lunge
+  // with its mark most of the way across, so the frame shows the blow, the
+  // hero driven back and washed red, and the HP it cost.
+  struck: {
+    blurb: 'a failing test lands — the monster lunges, the hero is driven back',
+    build: now => {
+      const st = hero(now, { cls: 'rogue', name: 'Sable', level: 19, zone: 'caves', gold: 7300, hpFrac: 0.41 });
+      st.monster = monster('caves', 'echowyrm', 20, 0.71);
+      st.anim = [anim('mhit', 1500, { dmg: 46, name: 'Echo Wyrm' }, now)];
+      st.ticker = [R.c('dim', '2 tests failing')];
+      return st;
+    },
+  },
   boss: {
     blurb: 'the boss intro marquee (flashes between two reds)',
     build: now => {
