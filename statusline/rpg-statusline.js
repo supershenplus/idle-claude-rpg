@@ -135,7 +135,10 @@ function main(stdin) {
           ? `✝ ${anim.data.drovenOffBy} drove you off… -${R.fmtGold(anim.data.lost)} · the approach resets`
           : `✝ you died… -${R.fmtGold(anim.data.lost)} (respawned)`);
       case 'idle':
-        return R.c('cyan', `⌛ while away: ${anim.data.kills} kills +${R.fmt(anim.data.xp)}xp +${R.fmtGold(anim.data.gold)}`);
+        return R.c('cyan', `⌛ while away: ${anim.data.kills} kills +${R.fmt(anim.data.xp)}xp +${R.fmtGold(anim.data.gold)}`)
+          // Tacked on rather than given its own frame: you were not here for
+          // either event, so they are one piece of news about the same absence.
+          + (anim.data.goblinFled ? R.c('brightRed', ' · a goblin got away') : '');
       case 'kill':
         return R.c('green', `${anim.data.name} slain  +${R.fmt(anim.data.xp)}xp +${R.fmtGold(anim.data.gold)}`);
       case 'travel':

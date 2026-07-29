@@ -219,6 +219,16 @@ const SCENES = {
       return st;
     },
   },
+  awaygoblin: {
+    blurb: 'coming back to find a goblin gave up waiting',
+    build: now => {
+      const st = hero(now, { cls: 'ranger', name: 'Nullpointer', level: 12, zone: 'caves', gold: 3080, hpFrac: 1 });
+      st.monster = monster('caves', 'kobold', 13, 0.83);
+      st.anim = [anim('idle', 5000, { kills: 46, xp: 2130, gold: 890, goblinFled: 1 }, now)];
+      st.ticker = [R.c('dim', 'while away: 46 kills +2,130xp +890g · a goblin got away')];
+      return st;
+    },
+  },
   insight: {
     blurb: 'a capped hero — the XP bar becomes the Insight bar',
     build: now => {

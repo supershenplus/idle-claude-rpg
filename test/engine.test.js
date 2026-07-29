@@ -1032,3 +1032,76 @@ test('an old save with no patience field does not flee instantly', () => {
       'the missing field did not default');
   } finally { restore(); }
 });
+
+// ---------- the goblin does not wait behind a closed laptop ----------
+//
+// Away kills are the away window's unit of work, so they spend a goblin's
+// patience the way folded events do. Without this, closing the lid mid-goblin
+// froze the deadline and "get it before it runs" stopped being true the moment
+// you stopped looking.
+
+function awayFor(s, hours) {
+  const now = T0 + hours * 3600000;
+  s.lastTickAt = T0;
+  E.fold(s, [], now);
+  return now;
+}
+
+test('a long absence loses the goblin, and the summary says so', () => {
+  const { s, restore } = goblinState(0);
+  try {
+    standUpGoblin(s);
+    s.monster.patience = B.GOBLIN_FLEE_EVENTS;
+    awayFor(s, B.OFFLINE_MAX_HOURS);
+
+    assert.strictEqual(s.counters.goblinFled, 1, 'it waited out the whole absence');
+    assert.ok(!s.monster.isGoblin, 'it is somehow still standing there');
+    const idle = s.anim.find(a => a.type === 'idle');
+    assert.ok(idle, 'no away summary was drawn');
+    assert.strictEqual(idle.data.goblinFled, 1, 'the summary did not mention the escape');
+    // One piece of news, not two: nobody was here to watch either happen.
+    assert.ok(!s.anim.some(a => a.type === 'goblinflee'),
+      'the escape drew its own banner on top of the away summary');
+  } finally { restore(); }
+});
+
+test('a short absence costs patience but not the goblin', () => {
+  const { s, restore } = goblinState(0);
+  try {
+    standUpGoblin(s);
+    s.monster.patience = B.GOBLIN_FLEE_EVENTS;
+    awayFor(s, 1);
+
+    assert.ok(s.monster.isGoblin, 'an hour away lost the goblin outright');
+    assert.ok(s.monster.patience < B.GOBLIN_FLEE_EVENTS, 'the hour cost it nothing');
+    assert.strictEqual(s.counters.goblinFled || 0, 0);
+    const idle = s.anim.find(a => a.type === 'idle');
+    assert.strictEqual(idle && idle.data.goblinFled, 0, 'the summary cried wolf');
+  } finally { restore(); }
+});
+
+test('an away escape grants no boss progress, matching the away window', () => {
+  // OFFLINE_REWARD_FRAC is documented as "no loot, no boss progress". A goblin
+  // fleeing inside that window has nothing to pay back, so crediting it would
+  // hand out progress the window is defined not to give.
+  const { s, restore } = goblinState(0);
+  try {
+    standUpGoblin(s);
+    s.monster.patience = 1;
+    const before = s.counters.killsSinceBoss;
+    awayFor(s, B.OFFLINE_MAX_HOURS);
+    assert.strictEqual(s.counters.goblinFled, 1);
+    assert.strictEqual(s.counters.killsSinceBoss, before,
+      'an away escape smuggled boss progress out of an away window');
+  } finally { restore(); }
+});
+
+test('a trash monster is untouched by the away window', () => {
+  const { s, restore } = goblinState(0);
+  try {
+    const before = s.monster;
+    awayFor(s, B.OFFLINE_MAX_HOURS);
+    assert.strictEqual(s.monster, before, 'the away window respawned a live monster');
+    assert.strictEqual(s.counters.goblinFled || 0, 0);
+  } finally { restore(); }
+});

@@ -19,6 +19,31 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### A goblin can't wait behind a closed laptop (2026-07-28)
+
+- **The real gap was not the missing summary line, it was the frozen deadline.**
+  Away progress is abstract — `applyTime` awards N kills without touching the
+  monster — so a goblin standing on the field when the lid shut was still there
+  on return with its patience untouched. Closing the laptop mid-goblin suspended
+  the clock, and "get it before it runs" stopped being true the moment you
+  stopped looking
+- **Away kills now spend patience the way folded events do.** They are the away
+  window's unit of work, so they are what the deadline is denominated in there.
+  An hour away costs a tick; a full eight-hour window outlasts any goblin
+- **An away escape grants no boss progress**, unlike a live one. A live goblin
+  that flees is credited because it stood in the vanguard's place and ate the
+  same stretch of clock — but an away window is documented as granting none at
+  all (`OFFLINE_REWARD_FRAC`: "no loot, no boss progress"), so there is nothing
+  to pay back and crediting it would smuggle progress out of a window defined
+  not to give any
+- **One piece of news, not two.** The escape is folded into the `idle` banner
+  (`⌛ while away: 46 kills +2.1kxp +890g · a goblin got away`) rather than
+  queueing its own frame behind it — the player was not present for either
+  event, so they are one report about the same absence
+- **Four tests**, including the two that matter in opposite directions: a long
+  absence must lose the goblin, and a short one must cost patience without
+  crying wolf in the summary
+
 ### The goblin runs (2026-07-28)
 
 - **The deadline is counted in folded events, never in seconds.** A wall-clock

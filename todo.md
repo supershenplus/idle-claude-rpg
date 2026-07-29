@@ -142,14 +142,18 @@ this file stays readable as a list of things to do.
       adds 2% of what the item rolled, which on Grove numbers is +0.22 ATK, so
       upgrades are dead at that tier too and there is genuinely nothing to spend
       gold on before the second zone
-- [ ] **The goblin's escape is invisible if you were away.** It flees now (see
-      `BUILD-LOG.md`) and the banner is honest, but the 4-second `goblinflee`
-      frame is the only record besides a ticker line that scrolls. Losing a
-      prize to a fight you never saw is exactly the kind of thing the offline
-      `idle` summary exists for — "while away: N kills, and one goblin got away"
-      — and `counters.goblinFled` is already there to read. Small, and it closes
-      the loop on the one outcome in the game the player can lose without ever
-      being told
+- [ ] **The away window still can't spawn a goblin, only lose one.** Wiring the
+      escape into the summary (see `BUILD-LOG.md`) closed the case where a goblin
+      was already standing there when you shut the laptop. It cannot handle the
+      other one: away progress is abstract — `applyTime` awards N kills without
+      ever spawning a monster — so no goblin can *turn up* during an absence, and
+      an eight-hour away window rolls exactly zero of them where eight hours at
+      the keyboard would rock roughly a dozen. Not obviously a bug: away kills
+      already pay half rate and drop no loot, so "no goblins either" is
+      consistent with a window that is deliberately not as good as playing. Worth
+      deciding on purpose rather than by omission, though — the honest options are
+      to leave it (absence is worse, that's the deal), or to roll goblins at the
+      away rate and pay only the gold arm, never the epic
 - [ ] **Guild / shared boss — abstract, unscoped, not a spec.** One boss, several
       people, everybody's work is the damage: your commits and mine land on the
       same HP bar, and the kill belongs to whoever was grinding. It fits the
