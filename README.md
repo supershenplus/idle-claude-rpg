@@ -19,6 +19,12 @@ The HUD picks a layout from `$COLUMNS`: 5-line sprites with the monster centred
 at ≥76 cols, one-line sprites at ≥50, and a single status line below that. Force
 one with `RPG_HUD=big|compact|mini`.
 
+Every class animates its own attack over the six frames of a hit — the wizard
+gathers its orb and is thrown back by the discharge, the knight steps onto a
+raised sword and sweeps it through 90°, the rogue cocks and throws its dagger,
+the ranger looses and recoils. Whatever leaves the sprite is what crosses the
+gap. Take a counter-swing and the hero washes red for the rest of the frame.
+
 See it without installing anything — every scene, drawn by the real renderer:
 
 ```sh
@@ -271,8 +277,8 @@ All of it also works token-free as `! node bin/rpg.js <cmd>`.
 | command fails | chip damage to you |
 
 Monsters fight back: every attack you land has a ~30% chance of a counter-swing
-(shown as `↩-7` flying back at you), so damage no longer depends on you fumbling
-a command.
+(shown as `↩-7` flying back at you, and the hero washed red for the rest of the
+animation), so damage no longer depends on you fumbling a command.
 
 ### The War Horn is detected from git, not from the hook
 

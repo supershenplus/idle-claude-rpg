@@ -31,9 +31,11 @@ const B = require('../lib/balance');
 const sprites = require('../lib/sprites');
 
 // Rendered at this offset into the animation, so multi-frame effects are caught
-// mid-swing rather than on frame 0 — the projectile has left the hero and the
-// damage number has appeared (it only shows from frame 2).
-const FRAME = 2;
+// mid-swing rather than on frame 0. Every class lands its blow on frame 3
+// (`sprites.attacks`), and the damage number, the counter-hit and the red hurt
+// flash all wait for that frame — so this is the earliest one where a hit scene
+// shows everything a hit does.
+const FRAME = 3;
 const AGO = FRAME * sprites.FRAME_MS;
 
 function monster(zoneId, monsterId, level, hpFrac) {
@@ -76,8 +78,13 @@ function hero(now, { cls = 'wizard', name = 'Eva', level = 1, zone = 'grove',
 const anim = (type, dur, data, now) => ({ type, at: now - AGO, dur, data });
 
 const SCENES = {
+  // The four attack scenes below are one per class, because that is the axis
+  // they differ on: each class scripts its own poses, recoil and projectile
+  // (`sprites.attacks`), so a change that breaks one can leave the other three
+  // looking perfect. Each carries a counter-hit as well, which is what puts the
+  // hero in its red hurt flash on this frame.
   hit: {
-    blurb: 'a crit landing, with the monster countering',
+    blurb: 'the wizard spends its orb — a crit landing, monster countering',
     build: now => {
       const st = hero(now, { cls: 'wizard', name: 'Eva', level: 31, zone: 'embers', gold: 12480, hpFrac: 0.86 });
       st.monster = monster('embers', 'ashwraith', 31, 0.39);
@@ -86,10 +93,9 @@ const SCENES = {
       return st;
     },
   },
-  // The frame this lands on (FRAME, above) is deliberately one of the two the
-  // ranger spends at full recoil: the shot is the only thing in the HUD that
-  // moves a sprite rather than a mark, and it is on screen for 500ms of a
-  // 1500ms hit, so "run it and wait" almost never catches it.
+  // A recoil is the only thing in the HUD that moves a sprite rather than a
+  // mark, and it is on screen for a few hundred ms of a 1500ms hit — so "run it
+  // and wait" almost never catches one.
   loose: {
     blurb: 'the ranger mid-shot — bow loosed, arrow crossing, hero shoved back',
     build: now => {
@@ -97,6 +103,26 @@ const SCENES = {
       st.monster = monster('archives', 'inkelem', 27, 0.46);
       st.anim = [anim('hit', 1500, { dmg: 64, crit: false, counter: 11 }, now)];
       st.ticker = [R.c('dim', 'Ink Elemental — 64')];
+      return st;
+    },
+  },
+  throw: {
+    blurb: 'the rogue mid-throw — empty hand, dagger crossing the gap',
+    build: now => {
+      const st = hero(now, { cls: 'rogue', name: 'Sable', level: 34, zone: 'embers', gold: 41800, hpFrac: 0.66 });
+      st.monster = monster('embers', 'cinderhound', 34, 0.58);
+      st.anim = [anim('hit', 1500, { dmg: 121, crit: false, counter: 19 }, now)];
+      st.ticker = [R.c('dim', 'Cinderhound — 121')];
+      return st;
+    },
+  },
+  swing: {
+    blurb: 'the knight mid-swing — blade come over, cleave crossing the gap',
+    build: now => {
+      const st = hero(now, { cls: 'knight', name: 'Bastion', level: 22, zone: 'archives', gold: 18600, hpFrac: 0.72 });
+      st.monster = monster('archives', 'tome', 22, 0.5);
+      st.anim = [anim('hit', 1500, { dmg: 77, crit: true, counter: 14 }, now)];
+      st.ticker = [R.c('brightYellow', '+77 crit!')];
       return st;
     },
   },

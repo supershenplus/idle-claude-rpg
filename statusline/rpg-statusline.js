@@ -165,6 +165,21 @@ function main(stdin) {
   const atk = anim && anim.type === 'hit' ? sprites.attackFrame(h.class, frame) : null;
   const recoil = atk ? atk.back : 0;
 
+  // Taking one is drawn as a colour rather than a pose. The hero has four
+  // classes and every one of them is mid-attack when the blow arrives — a
+  // flinch pose would have to be authored against each attack frame, and would
+  // fight the recoil the script is already applying. Washing the sprite red
+  // costs nothing per class and reads instantly, which is the whole job.
+  //
+  // It runs from the frame the counter-blow lands (the same frame its `↩-N`
+  // appears — both are the moment of impact) to the end of the animation, and
+  // for the whole of a death. Alternating two reds rather than holding one:
+  // the HUD is redrawn about once a second, so a viewer sees isolated frames,
+  // and a flat wash would be indistinguishable from a hero who simply is red.
+  const hurt = !!anim && (anim.type === 'death'
+    || (anim.type === 'hit' && anim.data.counter > 0 && frame >= sprites.hitFrame(h.class)));
+  const tint = s => (hurt && s ? R.c(frame % 2 === 0 ? 'brightRed' : 'red', s) : s);
+
   // Projectile + damage numbers that live in the gap between the combatants.
   //
   // `cells` is how much room the gap actually has. It matters because a burst of
@@ -193,7 +208,13 @@ function main(stdin) {
       const travel = Math.min(HERO_GAP - 4, frame * 3);
       flight = R.fit(heroArt.trail.repeat(Math.min(3, travel + 1)) + heroArt.proj, cells);
     } else if (atk.fly != null) {
-      const head = Math.round(atk.fly * Math.max(0, cells - 1));
+      // The head travels the gap less its own width, so a projectile wider than
+      // one cell lands *against* the monster rather than half inside it. The
+      // unscripted branch above never had to care — nothing moved its mark, so
+      // R.fit alone kept it in the gap — but here R.fit would silently eat the
+      // projectile itself and leave a trail pointing at nothing.
+      const span = Math.max(0, cells - R.width(heroArt.proj));
+      const head = Math.round(atk.fly * span);
       const tail = Math.min(3, head);
       flightCol = head - tail;
       flight = R.fit(heroArt.trail.repeat(tail) + heroArt.proj, cells - flightCol);
@@ -237,7 +258,7 @@ function main(stdin) {
     // shove the number off the end of it — and the lengthening trail carries the
     // shot instead.
     const scene = R.row()
-      .put(heroArt.idle,
+      .put(tint(heroArt.idle),
         Math.max(0, Math.max(LEFT_MIN, monLeft - HERO_GAP - R.width(heroArt.idle)) - recoil))
       .put(R.fit(g.flight + (g.dmg ? ' ' + g.dmg : ''), HERO_GAP - 2),
         Math.max(LEFT_MIN, monLeft - HERO_GAP + 1))
@@ -281,7 +302,7 @@ function main(stdin) {
     for (let i = 0; i < sprites.BIG_ROWS; i++) {
       const hLine = heroBig[i] || '';
       const mLine = monArt[i] || '';
-      const r = R.row().put(hLine, heroLeft + Math.round((heroW - R.width(hLine)) / 2));
+      const r = R.row().put(tint(hLine), heroLeft + Math.round((heroW - R.width(hLine)) / 2));
       if (i === waist - 1 && g.counter) r.put(g.counter, gapLeft + 2);
       if (i === waist && g.flight) r.put(g.flight, gapLeft + g.flightCol);
       if (i === waist + 1 && g.dmg) r.put(g.dmg, gapLeft + 1);

@@ -19,6 +19,48 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### Every class swings, and getting hit shows on the hero (2026-07-28)
+
+- **Three classes were standing still through their own attacks.** The ranger
+  had a scripted shot; wizard, knight and rogue fell through to the generic mark
+  crawling out of the gap, so three quarters of the roster fought by growing a
+  dash. Each now has poses and a script: the wizard gathers `·★°` into `◇◆◇` and
+  is thrown back three cells by the discharge, the knight steps *onto* a raised
+  sword and sweeps it through 90° coming off it, the rogue cocks its dagger and
+  throws it. Whatever leaves the sprite is what crosses the gap — the star, the
+  dagger, the arrow. The knight is the deliberate exception: it never lets go, so
+  the `≫` is a shockwave and the sword stays in the art
+- **`back` reads two ways, and that was the useful discovery.** For the two
+  classes that throw something it is a flinch (deep in the middle, recovering at
+  the end); for the two that swing it is the wind-up step, so the blow frames sit
+  at the mark and the hero *gains* ground exactly as the blade comes over. One
+  field, opposite readings, no new machinery
+- **The poses had to be drawn on the rendered grid, not on the source lines.**
+  The idle art is ragged and each row is nudged right by half its shortfall,
+  while a padded pose row is not nudged at all — so the first draft of the knight
+  put the crossguard one column left of the fist it had just been in, and the
+  sprite twitched on the frame the pose was held. Same fixed-point trap as the
+  sprite-centring note further down this log, one level up. Solved by dumping the
+  rendered grid and drawing against it; `statusline.test.js` now pins the fist,
+  the staff and the dagger across every pose the same way
+- **Taking a hit is now a colour, not a number.** The counter-swing's `↩-N` was
+  the only sign the monster had hit *you*. The hero is now washed red from the
+  frame the blow lands to the end of the animation, alternating two reds so a
+  once-a-second redraw reads it as a flash rather than as a hero who is simply
+  red. A flinch *pose* was the obvious alternative and the wrong one: it would
+  need authoring against each of four attack scripts and would fight the recoil
+  those scripts are already applying
+- **Found by the new tests, not by looking:** the wizard's `☆ﾟ.*` projectile was
+  five cells wide, which was fine for as long as nothing moved it — a scripted
+  shot anchors the mark to the projectile's *position*, so `R.fit` ate the star
+  at the far end of the flight and left `━━━…` pointing at nothing. It is now the
+  same `★` that sits on the staff tip, and the flight maths reserves the head's
+  width so no future projectile can be clipped either
+- `bin/demo.js` gained a scene per class (`hit` wizard, `swing` knight, `throw`
+  rogue, `loose` ranger) and moved its sample frame to 3, where every class lands
+  its blow — before, it sampled a frame where the damage number had not appeared
+- 275 tests green
+
 ### A goblin can't wait behind a closed laptop (2026-07-28)
 
 - **The real gap was not the missing summary line, it was the frozen deadline.**

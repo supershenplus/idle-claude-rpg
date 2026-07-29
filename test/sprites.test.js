@@ -102,12 +102,92 @@ test('every attack pose matches the shape of its class idle art', () => {
   }
 });
 
-test('the ranger release pose has loosed its arrow', () => {
-  const drawn = S.heroesBig.ranger.join('\n');
-  const loosed = S.heroPoses.ranger.release.join('\n');
-  for (const ch of ['┼', '▶']) {
-    assert.ok(drawn.includes(ch), `the idle bow is missing ${ch} — the nocked arrow is gone`);
-    assert.ok(!loosed.includes(ch), `${ch} is still on the string after the shot`);
+// Three of the four classes throw something, and the projectile in the gap is
+// supposed to *be* that thing: the ranger's arrow, the rogue's dagger, the
+// wizard's orb. If it is still in the sprite's hands while its copy flies across
+// the screen, the shot reads as a decoration rather than as the attack. The
+// knight is deliberately absent — it swings a sword it never lets go of, and
+// keeping it out of this table is what says so.
+const THROWN = {
+  ranger: ['release', ['┼', '▶']],
+  rogue: ['throw', ['╪']],
+  wizard: ['blast', ['★']],
+};
+
+test('a released pose has given up whatever it throws', () => {
+  for (const [cls, [pose, glyphs]] of Object.entries(THROWN)) {
+    const held = S.heroesBig[cls].join('\n');
+    const released = S.heroPoses[cls][pose].join('\n');
+    for (const ch of glyphs) {
+      assert.ok(held.includes(ch), `${cls} idle is missing ${ch} — nothing left to throw`);
+      assert.ok(!released.includes(ch), `${cls}/${pose}: ${ch} is still in hand after the release`);
+    }
+  }
+  assert.ok(S.heroPoses.knight.strike.join('\n').includes('╪'),
+    'the knight let go of its sword — the swing is not a throw');
+});
+
+test('every class scripts its own attack', () => {
+  for (const id of Object.keys(C.classes)) {
+    assert.ok(S.attacks[id],
+      `${id}: no attack script — it falls back to the generic mark in the gap`);
+    assert.ok(S.heroPoses[id] && Object.keys(S.heroPoses[id]).length,
+      `${id}: an attack script with no poses is a recoil and nothing else`);
+  }
+});
+
+// A hit can start while the previous one is still fading, and between blows the
+// layout assumes the hero is standing where it says it is. Both hold only if
+// every script begins and ends at rest.
+test('every attack script opens and closes at rest on the hero mark', () => {
+  for (const [cls, a] of Object.entries(S.attacks)) {
+    for (const [when, f] of [['opens', a.frames[0]], ['closes', a.frames[a.frames.length - 1]]]) {
+      assert.strictEqual(f.pose, null, `${cls}: ${when} on a pose instead of the idle art`);
+      assert.strictEqual(f.back, 0, `${cls}: ${when} ${f.back} cells off its mark`);
+      assert.strictEqual(f.fly, null, `${cls}: ${when} with a projectile already in the gap`);
+    }
+    assert.ok(a.frames.some(f => f.back > 0), `${cls}: the hero never moves at all`);
+    assert.ok(a.frames.some(f => f.pose), `${cls}: the hero never changes pose`);
+  }
+});
+
+test('a projectile only ever travels forward, and starts short of the target', () => {
+  for (const [cls, a] of Object.entries(S.attacks)) {
+    const fly = a.frames.map(f => f.fly).filter(v => v != null);
+    assert.ok(fly.length >= 2, `${cls}: the shot is on screen for one frame`);
+    for (let i = 1; i < fly.length; i++) {
+      assert.ok(fly[i] >= fly[i - 1], `${cls}: the shot flew backwards: ${fly}`);
+    }
+    assert.ok(fly[0] < 1, `${cls}: the shot is already home on the frame it leaves`);
+    assert.strictEqual(fly[fly.length - 1], 1, `${cls}: the shot never arrives: ${fly}`);
+  }
+});
+
+// The mark in the gap is anchored to the projectile's *position* once a script
+// is moving it, so a head wider than one cell is the first thing to run out of
+// room at the far end of the flight — R.fit eats the projectile and leaves a
+// trail pointing at nothing. The wizard's `☆ﾟ.*` did exactly that the moment it
+// got a script, having been fine for as long as nothing moved it.
+test('every projectile and trail is a single cell', () => {
+  for (const [id, h] of Object.entries(S.heroes)) {
+    assert.strictEqual(R.width(h.proj), 1, `${id}: projectile ${JSON.stringify(h.proj)} is not 1 cell`);
+    assert.strictEqual(R.width(h.trail), 1, `${id}: trail ${JSON.stringify(h.trail)} is not 1 cell`);
+  }
+});
+
+// Frames past the end of the hit are dead art: `attackFrame` clamps to the last
+// entry, so anything beyond the animation's own length simply never draws.
+test('no attack script runs past the animation it plays over', () => {
+  const E = require('../lib/engine');
+  const st = E.newState('wizard', 'Fixture', 1);
+  st.monster.hp = st.monster.maxHp = 1e9;      // survive the blow, so no kill anim
+  E.dealDamage(st, 1, {}, () => 0.99, 1);      // 0.99: no crit, no retaliation
+  const hit = st.anim.find(a => a.type === 'hit');
+  assert.ok(hit, 'the engine no longer queues a hit anim');
+  const budget = Math.ceil(hit.dur / S.FRAME_MS);
+  for (const [cls, a] of Object.entries(S.attacks)) {
+    assert.ok(a.frames.length <= budget,
+      `${cls}: ${a.frames.length} frames for a ${hit.dur}ms hit — the last ${a.frames.length - budget} never draw`);
   }
 });
 

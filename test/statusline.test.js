@@ -102,6 +102,65 @@ test('knight sword winds back over the shoulder unbroken', () => {
   assert.ok(blade[0] < cellOf(art, 2, '◆'), 'sword is on the shield side');
 });
 
+// The poses are drawn on the *rendered* grid, not on the raw strings: the idle
+// art is ragged, so each of its rows is nudged right by half its shortfall, while
+// a padded pose row is not nudged at all. Draw a pose by copying the source lines
+// and the fist lands a column off the moment the pose is held — which reads as a
+// twitch in the sprite rather than as a mistake in the art. `cellOf` does the
+// same centring the renderer does, so these compare like for like.
+test('the knight blade sweeps forward and the fist holds still', () => {
+  const { raise, strike } = sprites.heroPoses.knight;
+  const fists = [sprites.heroesBig.knight, raise, strike].map(a => cellOf(a, 2, '╪'));
+  assert.ok(fists.every(c => c >= 0), `the crossguard leaves the fist: ${fists}`);
+  assert.strictEqual(new Set(fists).size, 1, `the fist wanders mid-swing: ${fists}`);
+
+  // Wound back, upright, come over: 45° of arc per frame, always forward.
+  const tips = [cellOf(sprites.heroesBig.knight, 0, '╱'), cellOf(raise, 0, '▲'), cellOf(strike, 0, '╱')];
+  assert.ok(tips.every(c => c >= 0), `the blade loses its tip: ${tips}`);
+  assert.deepStrictEqual(tips, [tips[0], tips[0] + 2, tips[0] + 4],
+    `the tip does not sweep an even arc: ${tips}`);
+
+  // And the blade still traces back to the hand one cell per row in each pose.
+  assert.deepStrictEqual(diagonal(raise, [[2, '╪'], [1, '┃'], [0, '▲']]),
+    [fists[0], fists[0], fists[0]], 'the raised blade is not vertical over the fist');
+  assert.deepStrictEqual(diagonal(strike, [[2, '╪'], [1, '╱'], [0, '╱']]),
+    [fists[0], fists[0] + 1, fists[0] + 2], 'the swung blade jumps columns');
+});
+
+test('the rogue cocks its dagger before the hand comes up empty', () => {
+  const { coil, throw: thrown } = sprites.heroPoses.rogue;
+  const held = cellOf(sprites.heroesBig.rogue, 2, '╪');
+  // Cocked: same column, one row higher — an arm drawn back, not a new weapon.
+  assert.strictEqual(cellOf(coil, 1, '╪'), held, 'the cocked dagger is not over the fist');
+  assert.strictEqual(cellOf(coil, 0, '╱'), held + 1, 'the cocked blade lost its slope');
+  assert.strictEqual(cellOf(thrown, 1, '╪'), -1, 'the dagger is still in hand after the throw');
+
+  // The follow-through starts in the cell the dagger vacated and runs along the
+  // row the renderer flies the projectile down — otherwise the dagger leaves
+  // along one track and crosses the gap on another.
+  const waist = Math.floor(sprites.BIG_ROWS / 2);
+  assert.strictEqual(cellOf(thrown, waist, '╌'), held,
+    'the follow-through does not start where the dagger was');
+});
+
+test('the wizard staff holds its column while the orb leaves it', () => {
+  const { charge, blast } = sprites.heroPoses.wizard;
+  const idle = sprites.heroesBig.wizard;
+  // Row 2 is where the arm meets the shaft, so blast draws a ┫ joint there
+  // rather than a plain ┃ — same column, more surge going through it.
+  const shaft = [[idle, '┃'], [charge, '┃'], [blast, '┫']]
+    .flatMap(([art, mid]) => [cellOf(art, 1, '┃'), cellOf(art, 2, mid), cellOf(art, 3, '┃')]);
+  const cols = new Set(shaft);
+  assert.ok(!cols.has(-1), `the staff breaks somewhere: ${shaft}`);
+  assert.strictEqual(cols.size, 1, `the staff wanders between poses: ${shaft}`);
+  // The orb sits on the tip, swells there, and is gone — replaced by the
+  // discharge in the same cell, so the eye tracks one object the whole way.
+  const tip = [...cols][0];
+  assert.strictEqual(cellOf(idle, 0, '★'), tip, 'the resting orb is off the staff');
+  assert.strictEqual(cellOf(charge, 0, '◆'), tip, 'the charged orb is off the staff');
+  assert.strictEqual(cellOf(blast, 0, '↯'), tip, 'the spent tip is not where the orb was');
+});
+
 test('ranger bow limbs bulge symmetrically toward the target', () => {
   const art = sprites.heroesBig.ranger;
   const string = cellOf(art, 0, '│');
@@ -116,8 +175,8 @@ test('ranger bow limbs bulge symmetrically toward the target', () => {
 // already started. `engine.resolveKill` spawns the replacement immediately, so
 // every frame of the killing blow and the death that follows it would otherwise
 // be drawn against whatever monster happened to be standing there next.
-function renderAnim(cols, build, mode) {
-  const st = E.newState('ranger', 'Testfixture', Date.now());
+function renderAnim(cols, build, mode, cls) {
+  const st = E.newState(cls || 'ranger', 'Testfixture', Date.now());
   build(st, Date.now());
   S.saveState(st);
   return execFileSync('node', [CLI], {
@@ -195,7 +254,7 @@ test('an ordinary hit draws the projectile and both damage marks', () => {
   assert.ok(out.includes(sprites.heroes.ranger.proj), 'the projectile never left the bow');
 });
 
-// ---- the ranger's scripted shot ----
+// ---- the scripted attacks ----
 //
 // The recoil is the one part of the scene that moves the hero rather than the
 // marks, so it is also the one part that a narrow terminal can quietly eat: the
@@ -203,9 +262,16 @@ test('an ordinary hit draws the projectile and both damage marks', () => {
 // would just be clamped away. These pin the displacement against the script
 // itself, so it has to be real at every width rather than merely plausible.
 
-// The ranger's grip row, which survives every pose — and the pose art is padded
-// so it starts in the same column as the idle art's.
-const BOW = '▚░▒██▓▬';
+// A run of art unique to each class that survives all of its poses. The pose art
+// is padded to the idle art's block, so the same run also starts in the same
+// column in every frame — which is what makes it usable as a ruler.
+const GRIP = {
+  ranger: '▚░▒██▓▬',
+  wizard: '░▒██▓',
+  knight: '░▒██▓▜█▛',
+  rogue: '▚░▒██▓',
+};
+const BOW = GRIP.ranger;
 const SCRIPT = sprites.attacks.ranger.frames;
 
 function columnOf(out, needle) {
@@ -214,46 +280,127 @@ function columnOf(out, needle) {
   return R.width(line.slice(0, line.indexOf(needle)));
 }
 
-function atFrame(cols, frame, data) {
+function atFrame(cols, frame, data, cls) {
   return renderAnim(cols, (st, now) => {
     st.monster = { ...BOSS };
     st.anim = [{ type: 'hit', at: now - frame * sprites.FRAME_MS, dur: 1500,
       data: { dmg: 38, crit: false, counter: 0, ...data } }];
-  }, 'big');
+  }, 'big', cls);
 }
 
 // 100 is the roomy case and 76 the narrowest width that picks the big HUD on its
 // own — but neither reaches the left edge, so neither would notice the reserved
 // room going missing. 60 is a width only `RPG_HUD=big` can reach, and there the
 // scene is clamped hard against column 0: it is the case the reserve exists for.
+//
+// Every class is checked at every width because MAX_RECOIL reserves one shared
+// margin for all of them: a class that flinches deeper than the class the
+// reserve was measured against gets clipped, and only at the narrow widths.
 for (const cols of [100, 76, 60]) {
-  test(`the shot shoves the ranger back and lets it recover at ${cols} columns`, () => {
-    // Frame 0 is the nocked bow — the hero's home column.
-    const home = columnOf(atFrame(cols, 0), BOW);
-    const moved = SCRIPT.map((_, i) => home - columnOf(atFrame(cols, i), BOW));
-    assert.deepStrictEqual(moved, SCRIPT.map(f => f.back),
-      `recoil does not match the script — clamped against the left edge at ${cols} columns?`);
-    assert.strictEqual(moved[moved.length - 1], 0, 'the ranger never returns to its mark');
-  });
+  for (const [cls, grip] of Object.entries(GRIP)) {
+    test(`the ${cls} is shoved off its mark and recovers at ${cols} columns`, () => {
+      const script = sprites.attacks[cls].frames;
+      // Frame 0 is the idle art — the hero's home column.
+      const home = columnOf(atFrame(cols, 0, {}, cls), grip);
+      const moved = script.map((_, i) => home - columnOf(atFrame(cols, i, {}, cls), grip));
+      assert.deepStrictEqual(moved, script.map(f => f.back),
+        `recoil does not match the script — clamped against the left edge at ${cols} columns?`);
+      assert.strictEqual(moved[moved.length - 1], 0, `the ${cls} never returns to its mark`);
+    });
+  }
 }
 
-test('the arrow crosses the gap instead of stalling out of the bow', () => {
-  const flown = SCRIPT
-    .map((f, i) => (f.fly == null ? null : columnOf(atFrame(100, i), sprites.heroes.ranger.proj)))
-    .filter(x => x != null);
-  assert.ok(flown.length >= 3, 'the arrow is barely in flight at all');
-  for (let i = 1; i < flown.length; i++) {
-    assert.ok(flown[i] >= flown[i - 1], `the arrow flew backwards: ${flown}`);
+test('every projectile crosses the gap instead of stalling out of the hand', () => {
+  for (const [cls, a] of Object.entries(sprites.attacks)) {
+    const proj = sprites.heroes[cls].proj;
+    const flown = a.frames
+      .map((f, i) => (f.fly == null ? null : columnOf(atFrame(100, i, {}, cls), proj)))
+      .filter(x => x != null);
+    assert.ok(flown.length >= 2, `${cls}: the shot is barely in flight at all`);
+    for (let i = 1; i < flown.length; i++) {
+      assert.ok(flown[i] >= flown[i - 1], `${cls}: the shot flew backwards: ${flown}`);
+    }
+    assert.ok(flown[flown.length - 1] > flown[0] + 4,
+      `${cls}: the shot travels only ${flown[flown.length - 1] - flown[0]} cells: ${flown}`);
   }
-  assert.ok(flown[flown.length - 1] > flown[0] + 4,
-    `the arrow travels only ${flown[flown.length - 1] - flown[0]} cells: ${flown}`);
 });
 
-test('the damage number waits for the arrow to land', () => {
+test('the damage number waits for the blow to land', () => {
+  for (const cls of Object.keys(sprites.attacks)) {
+    const landed = sprites.hitFrame(cls);
+    assert.doesNotMatch(atFrame(100, landed - 1, {}, cls), /✦-/,
+      `${cls}: the damage is counted while the shot is still in the air`);
+    assert.match(atFrame(100, landed, {}, cls), /✦-38/,
+      `${cls}: the blow landed without a damage number`);
+  }
+});
+
+// ---- the hurt flash ----
+//
+// The only cue that the monster hit *you* used to be a number in the gap. The
+// hero is now washed red for the rest of the animation, which is the half of the
+// exchange the scene was not narrating at all.
+
+// The raw line — escapes intact — that the hero's art is drawn on.
+function heroLine(out, cls) {
+  const line = out.split('\n').find(l => R.visible(l).includes(GRIP[cls]));
+  assert.ok(line, `the ${cls} is not on screen`);
+  return line;
+}
+const REDDENED = /\x1b\[(31|91)m/;
+
+test('the hero flashes red from the frame the counter-blow lands', () => {
+  for (const cls of Object.keys(GRIP)) {
+    const landed = sprites.hitFrame(cls);
+    for (let f = 0; f < landed; f++) {
+      assert.doesNotMatch(heroLine(atFrame(100, f, { counter: 7 }, cls), cls), REDDENED,
+        `${cls}: hurt on frame ${f}, before the blow it is answering has landed`);
+    }
+    assert.match(heroLine(atFrame(100, landed, { counter: 7 }, cls), cls), REDDENED,
+      `${cls}: the counter-blow lands without the hero showing it`);
+  }
+});
+
+test('a blow that went unanswered does not redden the hero', () => {
+  // `counter: 0` is what the engine writes when retaliation did not roll — the
+  // hero took nothing, so there is nothing to flash about.
   const landed = sprites.hitFrame('ranger');
-  assert.doesNotMatch(atFrame(100, landed - 1), /✦-/,
-    'the damage is counted while the arrow is still in the air');
-  assert.match(atFrame(100, landed), /✦-38/, 'the arrow landed without a damage number');
+  assert.doesNotMatch(heroLine(atFrame(100, landed, { counter: 0 }), 'ranger'), REDDENED,
+    'the hero flashes on its own attack');
+  assert.match(atFrame(100, landed, { counter: 0 }), /✦-38/, 'the blow itself is missing');
+});
+
+test('dying reddens the hero for the whole banner', () => {
+  const out = renderAnim(100, (st, now) => {
+    st.monster = { ...BOSS };
+    st.anim = [{ type: 'death', at: now - 2 * sprites.FRAME_MS, dur: 5000, data: { lost: 120 } }];
+  }, 'big');
+  assert.match(out, /you died/, 'the death banner is missing');
+  assert.match(heroLine(out, 'ranger'), REDDENED, 'the hero dies without showing it');
+});
+
+test('the compact HUD flashes too', () => {
+  const landed = sprites.hitFrame('ranger');
+  const compact = (data) => renderAnim(60, (st, now) => {
+    st.monster = { ...BOSS };
+    st.anim = [{ type: 'hit', at: now - landed * sprites.FRAME_MS, dur: 1500,
+      data: { dmg: 38, crit: false, ...data } }];
+  }, 'compact');
+  const sceneLine = out => out.split('\n').find(l => R.visible(l).includes(sprites.heroes.ranger.idle));
+  assert.match(sceneLine(compact({ counter: 7 })), REDDENED, 'the one-line hero never flashes');
+  assert.doesNotMatch(sceneLine(compact({ counter: 0 })), REDDENED, 'it flashes when unhurt');
+});
+
+test('the flash is colour only — nothing in the scene moves', () => {
+  // The tint wraps art the layout has already measured, and the escapes it adds
+  // are invisible to R.width. If that ever stopped being true the monster would
+  // step sideways on exactly the frames the hero got hit, which is the hardest
+  // possible moment to notice it.
+  const landed = sprites.hitFrame('ranger');
+  assert.deepStrictEqual(
+    monsterColumns(atFrame(100, landed, { counter: 7 })),
+    monsterColumns(atFrame(100, landed, { counter: 0 })),
+    'getting hit pushed the monster out of column');
 });
 
 // Reported from the statusline: the monster's blow appeared to *drive* the
