@@ -8,7 +8,7 @@ game tick: every command Claude runs is an attack, passing tests grant XP,
 ⚔ Eva the Wizard  Lv 23  XP [██████▌░░░] 6.2k/11.0k   ♥ 84/97   ⛁ 1,204g
           ▲    ·★°                  ◢▓▓▓◣   ·
          ▟███▙  ┃     ↩-7          ◢◆ ◆▓▓◣ ░·
-          ▐◉▌───┃   ━━━☆ﾟ.*       ◢▓▓▓▓▓▓▓◣ ░
+          ▐◉▌───┃    ━━━★        ◢▓▓▓▓▓▓▓◣ ░
          ░▒██▓  ┃    ✦-38!        ▚▓▞▒▚▞░▚▞ ·
          ◢▒███▓◣                  ░ ▒░  ░ ▒ ·
                  Lv 31  Ash Wraith   HP [███▌░░░░░░] 210/540
@@ -21,6 +21,22 @@ width on the way out, so narrow is a truncated scene, never a broken one. Pin a
 layout with `/hero hud big|compact` (and `/hero hud auto` to go back to picking
 by width) — it lives in your save and takes effect on the next frame.
 `RPG_HUD=big|compact` in the environment overrides both.
+
+Narrow is the same cast, not a different one. The one-line sprites are each
+creature's own big art at the waist, compressed — that Ash Wraith again, seen
+from further away:
+
+```
+⚔ Eva the Wizard  Lv 31  XP [█████░░░░░] 8.6k/17k   ♥ 194/2…
+  ▐◉▌───┃    ━━━★ ✦-38!     ◢◆▓◆▓▓◣░
+  Lv 31  Ash Wraith   HP [████░░░░░░] 131/335
+  Ember Wastes · +38 crit! · Magma Imp slain +162xp
+```
+
+Widths are uniform per tier — 8 cells of trash, 10 of boss — because compact
+centres the monster and hangs the hero a fixed gap off it, so a ragged set moves
+the *hero* every time one mob replaces another. A boss is still allowed to shift
+the scene, which is a shift that means something.
 
 Every class animates its own attack over the six frames of a hit — the wizard
 gathers its orb and is thrown back by the discharge, the knight steps onto a

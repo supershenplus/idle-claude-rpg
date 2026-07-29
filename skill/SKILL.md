@@ -58,10 +58,10 @@ Map the user's arguments directly onto it:
 `/hero init` with no class: do NOT run the CLI menu. Instead use AskUserQuestion:
 
 1. **Class** — options (label / description):
-   - Wizard — `(∩｀-´)⊃━☆ﾟ.*` 15% chance any attack crits for double damage
-   - Knight — `[è_é]o=====>` takes half damage, +25% HP, commits hit harder
-   - Rogue — `(¬‿¬)⌐╦╦═─` gold ×1.25, loot drops 1.5× as often
-   - Ranger — `(๑•̀ᴗ•́)︻┳═一` lines-of-code damage ×1.15, all XP ×1.10
+   - Wizard — `▐◉▌───┃ ━━━★` 15% chance any attack crits for double damage
+   - Knight — `╪░▟◉█▙◆ ===≫` takes half damage, +25% HP, commits hit harder
+   - Rogue — `▚░▒█◕▙╪ ───╫` gold ×1.25, loot drops 1.5× as often
+   - Ranger — `▚▒█◔▓┼▶ ---➳` lines-of-code damage ×1.15, all XP ×1.10
 2. **Hero name** — 2-4 fun suggestions; free text via "Other".
 
 Then run: `node <cli> init --class <id> --name "<name>"`.

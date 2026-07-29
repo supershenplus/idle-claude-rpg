@@ -19,6 +19,50 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### The compact HUD gets the art the big one got a week ago (2026-07-29)
+
+- **The gap this closed.** v1.2 redrew all 33 sprites as 5-row block art and
+  banned two-cell glyphs from it — and stopped there. The one-liners the compact
+  HUD draws stayed the kaomoji the game shipped with on day one, so the two
+  layouts drew visibly different creatures: an Ash Wraith was a nine-glyph
+  revenant at 80 columns and `(◣_◢)` at 70. Long-deferred in the backlog, and
+  deferred partly because it looked like taste. It wasn't: the narrow layout is
+  the one a split pane or a sidebar terminal actually gets
+- **The rule that made it 35 decisions instead of 35 inventions.** Each one-liner
+  is that creature's own big art *at the waist* — the row the projectile already
+  flies along — compressed to a fixed width. So `▐◉▌───┃` (the wizard) and
+  `▚░▒█▓▙╪` (the rogue) are their big art's middle row verbatim; the knight's and
+  the ranger's fold the eye down one row, because a face is most of what makes
+  seven cells read as a person. Nothing was designed twice, and a monster added
+  later has an obvious answer to "what does it look like small"
+- **Widths are uniform per tier — and that is a layout fix, not a tidiness one.**
+  Compact centres the monster on the terminal midpoint and hangs the hero a fixed
+  gap to its left, so the hero's column is a *function of the monster's width*.
+  The old set ranged 3 to 11 cells, which meant the hero shuffled sideways on
+  every kill — several times a minute, on a redraw that also had a corpse and a
+  banner in it, so it read as the layout settling rather than as anything in the
+  game. 8 cells of trash and 10 of boss makes the geometry constant within a
+  tier. A boss still moves it, which is a shift that means something
+- **Two big-art nits went with it, both the same bug.** `harpy` had a `▚`
+  floating three columns off its right wing and `leech` was 8 cells against a
+  roster of 11–13. The harpy's stray glyph was not a stray glyph: its row was 12
+  cells against a 13-cell sprite, and per-row centring nudged it half a column
+  out of line with everything else. Redrawn to uniform 13 — the same fix the loot
+  goblin already carried, and the reason every row now has to *end* on a glyph
+  (which is what the frost motes on the bottom rows are). The leech grew to 11,
+  longer rather than fatter: it is the trash of the Null Expanse and it read as a
+  Grove mob that had wandered in
+- 4 new tests in `sprites.test.js` mirroring the big art's: single-cell glyphs,
+  exact width per tier, no whitespace padding, and every hero one-liner fitting
+  inside its own big art. The one-liners had no invariants at all before, which
+  is exactly how they stayed two-cell-wide long after the big art had banned that
+- Follow-on tidying the pass forced: `bin/rpg.js`'s class menu aligns now
+  (`.padEnd(12)` counts code units, which kaomoji made a lie), `SKILL.md`'s class
+  picker shows the real sprites, and `render.js`'s `charWidth` comment stopped
+  citing the sprites as its reason. It keeps a better one — the hero's name is
+  whatever the player typed, and it is the one string on the vitals line the game
+  does not control
+
 ### Four backups instead of one, after losing a day to having one (2026-07-29)
 
 - **Cause, recorded plainly.** A throwaway probe script written during the boss

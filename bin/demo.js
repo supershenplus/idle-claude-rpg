@@ -257,7 +257,7 @@ const SCENES = {
     },
   },
   kill: {
-    blurb: 'a kill — the monster flips to (x_x)',
+    blurb: 'a kill — the monster flips to the corpse',
     build: now => {
       const st = hero(now, { cls: 'rogue', name: 'Sable', level: 52, zone: 'null', gold: 240500, hpFrac: 0.71 });
       st.monster = monster('null', 'leech', 52, 0.001);

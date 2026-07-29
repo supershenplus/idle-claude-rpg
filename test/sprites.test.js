@@ -369,3 +369,68 @@ test('every class has hero art and a one-line sprite', () => {
     assert.ok(S.heroes[id] && S.heroes[id].idle, `${id}: no one-line sprite`);
   }
 });
+
+// ---------- the one-line sprites ----------
+//
+// The compact HUD's whole cast. These used to be the kaomoji the game shipped
+// with and had no invariants at all, which is how they stayed two cells wide per
+// glyph long after the big art had banned that — nothing checked, so nothing
+// complained. They carry the same single-cell rule now, plus one the big art
+// does not need: a fixed width per tier.
+function oneLiners() {
+  const out = [];
+  const bossIds = new Set(C.zones.map(z => z.boss.id));
+  for (const z of C.zones) {
+    for (const m of [...z.monsters, z.boss]) {
+      out.push([`${z.id}/${m.id}`, m.sprite, bossIds.has(m.id) ? S.ONE_LINE_BOSS_W : S.ONE_LINE_W]);
+    }
+  }
+  out.push(['goblin', C.GOBLIN.sprite, S.ONE_LINE_W]);
+  out.push(['dead', S.DEAD_MONSTER, S.ONE_LINE_W]);
+  return out;
+}
+
+test('one-line sprites use only single-cell glyphs', () => {
+  const all = [...oneLiners(), ...Object.entries(S.heroes).map(([id, h]) => [`hero:${id}`, h.idle])];
+  for (const [label, sprite] of all) {
+    assert.strictEqual(typeof sprite, 'string', `${label}: not a string`);
+    for (const ch of sprite) {
+      const cp = ch.codePointAt(0);
+      assert.strictEqual(R.charWidth(cp), 1,
+        `${label}: ${JSON.stringify(ch)} (U+${cp.toString(16)}) is not 1 cell wide`);
+    }
+  }
+});
+
+// The reason this is an equality and not a ceiling: compact centres the monster
+// on the terminal's midpoint and hangs the hero a fixed gap to its left, so the
+// hero's column is a function of the monster's width. Let the widths vary within
+// a tier and the hero shuffles sideways every time one trash mob replaces
+// another — once per kill, several times a minute, for no reason a player could
+// name. A boss changing it is fine and deliberate: that shift means something.
+test('one-line sprites are a fixed width per tier', () => {
+  for (const [label, sprite, want] of oneLiners()) {
+    assert.strictEqual(R.width(sprite), want, `${label}: ${JSON.stringify(sprite)} is not ${want} cells`);
+  }
+});
+
+// A leading or trailing space is invisible in the source and load-bearing in the
+// layout — it would offset the sprite from the mark the scene centres it on, and
+// on the monster's side it would eat into the gap the damage figure lives in.
+test('no one-line sprite is padded with whitespace', () => {
+  const all = [...oneLiners(), ...Object.entries(S.heroes).map(([id, h]) => [`hero:${id}`, h.idle])];
+  for (const [label, sprite] of all) {
+    assert.strictEqual(sprite, sprite.trim(), `${label}: padded with whitespace`);
+  }
+});
+
+// The hero's one-liner is the big art's waistline, so it has to fit inside the
+// block the big art reserves — a compact hero wider than its own big art would
+// be the one sprite in the game that grew when the terminal got narrower.
+test('every hero one-liner fits inside its own big art', () => {
+  for (const [id, h] of Object.entries(S.heroes)) {
+    const bigW = Math.max(...S.heroesBig[id].map(R.width));
+    assert.ok(R.width(h.idle) <= bigW, `${id}: one-liner is wider than its big art`);
+    assert.ok(R.width(h.idle) >= 5, `${id}: one-liner is only ${R.width(h.idle)} cells`);
+  }
+});

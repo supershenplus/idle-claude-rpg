@@ -94,12 +94,16 @@ this file stays readable as a list of things to do.
 
 ## Backlog
 
-- [ ] Two smaller sprite nits, both cosmetic and both long-deferred: `harpy` has
-      a stray `▚` floating off the right wing, and `leech` is 8 cells wide where
-      the rest of the set is 11-13, so it reads undersized next to its zone
-- [ ] One-line sprites in `lib/content.js` are still the original kaomoji — only
-      the 5-row big art was redrawn in v1.2, so compact and mini HUD modes never
-      got the pass
+- [ ] **The corpse is the one place the uniform one-line widths don't hold.**
+      `DEAD_MONSTER` is 8 cells — trash width — so killing a 10-cell boss shifts
+      the scene one column for the length of the kill animation, which is exactly
+      the jitter the fixed widths exist to stop. Deliberately left: it is one
+      cell, once per boss, under a flashing DEFEATED banner, and the big HUD has
+      carried a far larger version of it since v1.2 (`DEAD_MONSTER_BIG` is 11
+      against a 17-cell boss) without anyone noticing. The fix if it ever reads
+      wrong is a second corpse at boss width, keyed off `mon.isBoss` at the two
+      call sites — cheap, but it buys a frame nobody is looking at, and it wants
+      the big-HUD half done at the same time or the inconsistency just moves
 - [ ] **The right-edge reserve gives way before the hero's does, and only where
       it matters most.** `MAX_MONSTER_BACK` keeps two columns clear so a
       knockback is never trimmed, but the monster's floor column
