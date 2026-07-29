@@ -46,7 +46,7 @@ Map the user's arguments directly onto it:
   relay the preview, then re-run with `--confirm`. Insight is never reset and never refunded,
   and nothing about paragon touches level, gear, gold or zone — say so if the user worries
   that hitting the cap costs them anything.
-- HUD layout: `/hero hud` shows the current layout and the three options; `/hero hud big|compact|mini`
+- HUD layout: `/hero hud` shows the current layout and both options; `/hero hud big|compact`
   pins one and `/hero hud auto` goes back to picking by terminal width. Immediate, no `--confirm` —
   it changes nothing but how the statusline draws, and `auto` undoes it. Pinning a layout wider than
   the terminal is allowed and warns; relay the warning with the rest of the output. Takes effect on

@@ -405,7 +405,7 @@ test('hud rejects an unknown mode without touching the save', () => {
 test('hud reports the $RPG_HUD override that would silently beat it', () => {
   seed();
   const out = R.visible(execFileSync('node', [CLI, 'hud', 'compact'], {
-    env: { ...process.env, IDLE_RPG_HOME: HOME, COLUMNS: '100', RPG_HUD: 'mini' }, encoding: 'utf8',
+    env: { ...process.env, IDLE_RPG_HOME: HOME, COLUMNS: '100', RPG_HUD: 'big' }, encoding: 'utf8',
   }));
-  assert.match(out, /\$RPG_HUD=mini is set, and overrides this/);
+  assert.match(out, /\$RPG_HUD=big is set, and overrides this/);
 });

@@ -37,8 +37,10 @@ function render(cols) {
   });
 }
 
-for (const [mode, cols] of [['big', 100], ['compact', 60], ['mini', 40]]) {
-  test(`${mode} HUD survives Claude Code's per-line trim`, () => {
+// 30 cols is the case `mini` used to own. Compact inherited it when mini was
+// removed, so it is tested at both a comfortable width and a hostile one.
+for (const [mode, cols] of [['big', 100], ['compact', 60], ['compact', 30]]) {
+  test(`${mode} HUD at ${cols} cols survives Claude Code's per-line trim`, () => {
     const out = render(cols).trim();
     assert.ok(out.length > 0, 'rendered nothing');
     assert.strictEqual(claudeCodeTrim(out), out,
@@ -564,7 +566,7 @@ test('a coalesced hit cannot shove the compact monster off its centre', () => {
 // the discriminator because it *is* the contract — each layout is documented by
 // how many lines it occupies, and the header comment claiming compact was three
 // of them was wrong for as long as the comment existed.
-const HUD_LINES = { big: 8, compact: 4, mini: 1 };
+const HUD_LINES = { big: 8, compact: 4 };
 
 function renderPinned(cols, hud, env = {}) {
   const st = E.newState('ranger', 'Testfixture', Date.now());
@@ -577,19 +579,17 @@ function renderPinned(cols, hud, env = {}) {
 }
 
 test('a pinned layout beats the one the width would have picked', () => {
-  // 100 cols is comfortably `big` territory, which is the point: if the pin
-  // were being ignored these would all come back as 8.
-  for (const mode of ['compact', 'mini']) {
-    assert.strictEqual(renderPinned(100, mode), HUD_LINES[mode],
-      `pinned ${mode} did not survive at 100 cols`);
-  }
-  // …and the other direction: `big` pinned into a terminal too narrow to choose
-  // it. Pinning warns in the CLI but is obeyed here.
-  assert.strictEqual(renderPinned(60, 'big'), HUD_LINES.big, 'pinned big was overridden by width');
+  // Both directions: compact held at a width that would have chosen big, and
+  // big held at a width that would have chosen compact. Pinning a layout wider
+  // than the terminal warns in the CLI but is obeyed here.
+  assert.strictEqual(renderPinned(100, 'compact'), HUD_LINES.compact,
+    'pinned compact did not survive at 100 cols');
+  assert.strictEqual(renderPinned(60, 'big'), HUD_LINES.big,
+    'pinned big was overridden by width');
 });
 
 test('$RPG_HUD overrides a pinned layout', () => {
-  assert.strictEqual(renderPinned(100, 'big', { RPG_HUD: 'mini' }), HUD_LINES.mini,
+  assert.strictEqual(renderPinned(60, 'compact', { RPG_HUD: 'big' }), HUD_LINES.big,
     'the saved pin won over the environment override');
 });
 
@@ -597,14 +597,22 @@ test('an unrecognised pin falls back to width instead of rendering nothing', () 
   // `hud` is a field in a file the player can edit. An unknown value used to
   // fall through every layout branch, which renders an empty status line —
   // failing in the one way the HUD is built never to fail.
-  for (const junk of ['sideways', '', 'BIG ', 42, null]) {
+  //
+  // `mini` is in this list on purpose. It was a real layout until it was
+  // removed, so a save written by the previous version can still be pinned to
+  // it — and this validation is the whole reason that needs no migration: an
+  // orphaned pin is just an unrecognised one, and heals to width on the next
+  // frame.
+  for (const junk of ['sideways', 'mini', '', 'BIG ', 42, null]) {
     assert.strictEqual(renderPinned(100, junk), HUD_LINES.big,
       `pin ${JSON.stringify(junk)} did not fall back to the width-picked layout`);
   }
 });
 
-test('auto is the absence of a pin, not a fourth layout', () => {
+test('auto is the absence of a pin, not a third layout', () => {
   assert.strictEqual(renderPinned(100, undefined), HUD_LINES.big);
   assert.strictEqual(renderPinned(60, undefined), HUD_LINES.compact);
-  assert.strictEqual(renderPinned(40, undefined), HUD_LINES.mini);
+  // Below the width mini used to serve, compact is now the floor rather than a
+  // handoff to a third layout.
+  assert.strictEqual(renderPinned(30, undefined), HUD_LINES.compact);
 });

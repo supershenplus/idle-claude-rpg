@@ -32,8 +32,8 @@ test('--list names every scene', () => {
   for (const s of SCENES) assert.match(s, /^[a-z]+$/);
 });
 
-for (const [mode, cols] of [['big', 100], ['compact', 60], ['mini', 40]]) {
-  test(`every scene renders in the ${mode} HUD`, () => {
+for (const [mode, cols] of [['big', 100], ['compact', 60], ['compact', 30]]) {
+  test(`every scene renders in the ${mode} HUD at ${cols} cols`, () => {
     for (const scene of SCENES) {
       const out = demo([scene, '--mode', mode, '--cols', String(cols)]);
       assert.ok(out.includes(scene), `${scene}: not labelled in its own output`);

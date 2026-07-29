@@ -5,11 +5,11 @@
 // a trigger), folds pending events, renders a battle scene sized to $COLUMNS.
 // Never throws: worst case prints a minimal fallback and exits 0.
 //
-// Three layouts, picked by width unless the save pins one (`/hero hud <mode>`)
-// or $RPG_HUD overrides both (RPG_HUD=big|compact|mini):
+// Two layouts, picked by width unless the save pins one (`/hero hud <mode>`)
+// or $RPG_HUD overrides both (RPG_HUD=big|compact):
 //   big     8 lines — 5-line sprites, monster centred, name/level/HP beneath
-//   compact 4 lines — one-line sprites, monster centred
-//   mini    1 line  — level, HP, monster name
+//   compact 4 lines — one-line sprites, monster centred; every line is cut to
+//                     `cols` on the way out, so this is also the narrow case
 //
 // The monster sits on the terminal's midpoint and the hero is placed a fixed
 // gap to its left, so the pair reads as a centred scene rather than two
@@ -79,14 +79,6 @@ function main(stdin) {
   const hpCol = h.hp / h.maxHp < 0.3 ? 'brightRed' : 'green';
   const line1 = `⚔ ${R.c('bold', `${h.name} the ${cls.name}`)}  Lv ${h.level}  XP ${xpStr}   `
     + R.c(hpCol, `♥ ${h.hp}/${h.maxHp}`) + `   ${R.c('yellow', '⛁ ' + R.fmtGold(h.gold))}${badge}`;
-
-  if (mode === 'mini') {
-    const line = `Lv${h.level} ${cls.name.slice(0, 3)} ♥${h.hp} `
-      + `${m.name ? m.name.replace(/ /g, '') : ''} Lv${m.level || '?'} `
-      + `${R.fmt(m.hp || 0)}/${R.fmt(m.maxHp || 0)}`;
-    console.log(R.keepIndent(R.fit(line, cols)));
-    return;
-  }
 
   // ---- active animation ----
   const anim = (state.anim || []).find(a => now >= a.at && now < a.at + a.dur);

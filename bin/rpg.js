@@ -35,7 +35,6 @@ function requireSave() {
 const HUD_BLURB = {
   big: '8 lines, 5-line sprites',
   compact: '4 lines, one-line sprites',
-  mini: '1 line, no art',
 };
 
 // The terminal's width, or 0 when there is none to read. Guessing 80 the way

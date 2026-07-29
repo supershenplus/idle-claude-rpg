@@ -13,7 +13,7 @@
 //
 //   node bin/demo.js                    every scene at 100 cols, big HUD
 //   node bin/demo.js boss loot          just those scenes
-//   node bin/demo.js --mode compact     the 3-line layout (or mini)
+//   node bin/demo.js --mode compact     the one-line-sprite layout
 //   node bin/demo.js --cols 76          at a specific width
 //   node bin/demo.js --list             scene names
 
@@ -314,7 +314,7 @@ function main() {
     return 0;
   }
   const mode = String(opt('mode', 'big'));
-  const cols = parseInt(opt('cols', mode === 'mini' ? 40 : mode === 'compact' ? 60 : 100), 10);
+  const cols = parseInt(opt('cols', mode === 'compact' ? 60 : 100), 10);
   const names = argv.filter(a => !a.startsWith('--'));
   const bad = names.filter(n => !SCENES[n]);
   if (bad.length) {
