@@ -142,20 +142,14 @@ this file stays readable as a list of things to do.
       adds 2% of what the item rolled, which on Grove numbers is +0.22 ATK, so
       upgrades are dead at that tier too and there is genuinely nothing to spend
       gold on before the second zone
-- [ ] **Loot goblin — shipped, but it doesn't flee.** See `BUILD-LOG.md`. The
-      archetype's other half is that a loot goblin *runs*: it should be possible
-      to lose the prize by not working fast enough, which is the only version of
-      this that makes the banner urgent rather than decorative — and the banner
-      already says "get it before it runs", which is currently a bluff. Not built
-      because fleeing means a monster can leave the field on a *timer* rather
-      than on an event, and every other state change in this game is driven by a
-      folded hook event. A goblin that despawns at wall-clock T is the first
-      thing in the engine whose outcome depends on when you happened to look,
-      which is exactly the class of bug `fold` exists to prevent. Plausible dodge:
-      give the goblin a kill-deadline in *events* rather than seconds (it flees
-      if it survives N more folded events), which keeps the whole thing
-      deterministic and replayable. Worth doing — it is the difference between an
-      event and a bonus
+- [ ] **The goblin's escape is invisible if you were away.** It flees now (see
+      `BUILD-LOG.md`) and the banner is honest, but the 4-second `goblinflee`
+      frame is the only record besides a ticker line that scrolls. Losing a
+      prize to a fight you never saw is exactly the kind of thing the offline
+      `idle` summary exists for — "while away: N kills, and one goblin got away"
+      — and `counters.goblinFled` is already there to read. Small, and it closes
+      the loop on the one outcome in the game the player can lose without ever
+      being told
 - [ ] **Guild / shared boss — abstract, unscoped, not a spec.** One boss, several
       people, everybody's work is the damage: your commits and mine land on the
       same HP bar, and the kill belongs to whoever was grinding. It fits the

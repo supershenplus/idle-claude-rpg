@@ -118,6 +118,8 @@ function main(stdin) {
       // a 5% spawn nobody notices is just a monster with odd numbers.
       case 'goblin':
         return R.c(flash2('brightYellow', 'yellow'), `≡$≡ ${String(anim.data.name || '').toUpperCase()} — get it before it runs ≡$≡`);
+      case 'goblinflee':
+        return R.c(flash2('brightRed', 'red'), `≡$≡ ${anim.data.name} got away with the sack ≡$≡`);
       case 'goblinloot':
         if (anim.data.gold != null && !anim.data.item) {
           return R.c('brightYellow', `≡$≡ the sack bursts — +${R.fmtGold(anim.data.gold)} ≡$≡`);

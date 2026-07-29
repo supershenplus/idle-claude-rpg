@@ -930,3 +930,105 @@ test('the goblin hits harder than trash and softer than a boss', () => {
     && B.GOBLIN_RETALIATE_MULT < B.RETALIATE_MULT_BOSS, 'retaliate damage is out of band');
   assert.ok(B.GOBLIN_HP_MULT < 10, 'the goblin is as tanky as a boss');
 });
+
+// ---------- the goblin runs ----------
+//
+// The deadline is counted in folded events, never in wall-clock, so that a
+// replay of the same events lands where the live run did. These pin that, and
+// the off-by-one that would let a freshly spawned goblin inherit the previous
+// monster's spent patience.
+
+function feed(s, n, at) {
+  const evs = Array.from({ length: n }, (_, i) => ({ t: (at || T0) + i * 1000, e: 'rest', m: {} }));
+  E.fold(s, evs, (at || T0) + n * 1000);
+}
+
+test('the goblin leaves after GOBLIN_FLEE_EVENTS events, not before', () => {
+  const { s, restore } = goblinState(0);
+  try {
+    standUpGoblin(s);
+    s.monster.patience = B.GOBLIN_FLEE_EVENTS;
+    // `rest` deals no damage, so the only thing that can end this fight is the
+    // deadline — which is exactly what is under test.
+    feed(s, B.GOBLIN_FLEE_EVENTS - 1);
+    assert.ok(s.monster.isGoblin, `it left after ${B.GOBLIN_FLEE_EVENTS - 1} events`);
+    assert.strictEqual(s.counters.goblinFled || 0, 0);
+
+    feed(s, 1, T0 + 100000);
+    assert.ok(!s.monster.isGoblin, 'it was still there past its deadline');
+    assert.strictEqual(s.counters.goblinFled, 1);
+  } finally { restore(); }
+});
+
+test('a fled goblin still credits the boss cycle for the time it ate', () => {
+  // Otherwise a goblin that gets away is strictly worse than the trash mob it
+  // displaced, which is the boss-delay tax this whole feature avoids.
+  const { s, restore } = goblinState(0);
+  try {
+    standUpGoblin(s);
+    s.monster.patience = 1;
+    const before = s.counters.killsSinceBoss;
+    feed(s, 1);
+    assert.strictEqual(s.counters.goblinFled, 1, 'it did not flee');
+    assert.strictEqual(s.counters.killsSinceBoss - before, B.GOBLIN_HP_MULT,
+      'a fled goblin taxed the boss cycle');
+  } finally { restore(); }
+});
+
+test('fleeing pays nothing — the prize is the whole penalty', () => {
+  const { s, restore } = goblinState(0);
+  try {
+    standUpGoblin(s);
+    s.monster.patience = 1;
+    const gold = s.hero.gold, bag = s.inventory.length;
+    feed(s, 1);
+    assert.strictEqual(s.hero.gold, gold, 'a fled goblin paid out gold');
+    assert.strictEqual(s.inventory.length, bag, 'a fled goblin dropped an item');
+    assert.ok(s.anim.some(a => a.type === 'goblinflee'), 'the escape drew nothing');
+    assert.ok(!s.anim.some(a => a.type === 'goblinloot'), 'it paid out on the way out');
+  } finally { restore(); }
+});
+
+test('a kill inside the deadline still pays', () => {
+  const { s, restore } = goblinState(0);
+  try {
+    standUpGoblin(s);
+    s.monster.patience = B.GOBLIN_FLEE_EVENTS;
+    slay(s, 7);
+    assert.strictEqual(s.counters.goblinKills, 1, 'the kill did not register');
+    assert.strictEqual(s.counters.goblinFled || 0, 0, 'a killed goblin also fled');
+    assert.ok(s.anim.some(a => a.type === 'goblinloot'), 'a kill inside the deadline paid nothing');
+  } finally { restore(); }
+});
+
+test('a goblin that spawns mid-fold starts with full patience', () => {
+  // dealDamage can kill and respawn inside one event, swapping state.monster
+  // underneath the fold loop. Billing that event to the newcomer would start
+  // every mid-fold goblin a tick short — and with GOBLIN_CHANCE at 1, every
+  // spawn here is a goblin, so the newcomer is always one.
+  const { s, restore } = goblinState(1);
+  try {
+    E.spawnMonster(s, mulberry32(5));
+    assert.ok(s.monster.isGoblin);
+    s.monster.hp = 1;
+    const doomed = s.monster;
+    E.fold(s, [{ t: T0, e: 'attack_build', m: {} }], T0);
+    assert.notStrictEqual(s.monster, doomed, 'the killing blow did not respawn');
+    assert.strictEqual(s.monster.patience, B.GOBLIN_FLEE_EVENTS,
+      'the replacement was billed for the event that killed its predecessor');
+  } finally { restore(); }
+});
+
+test('an old save with no patience field does not flee instantly', () => {
+  // `patience` is new. A goblin mid-fight in a save written before this landed
+  // has no such field, and `undefined - 1` is NaN, which is not > 0.
+  const { s, restore } = goblinState(0);
+  try {
+    standUpGoblin(s);
+    delete s.monster.patience;
+    feed(s, 1);
+    assert.ok(s.monster.isGoblin, 'a pre-flee save lost its goblin on the first event');
+    assert.strictEqual(s.monster.patience, B.GOBLIN_FLEE_EVENTS - 1,
+      'the missing field did not default');
+  } finally { restore(); }
+});

@@ -19,6 +19,37 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### The goblin runs (2026-07-28)
+
+- **The deadline is counted in folded events, never in seconds.** A wall-clock
+  timer would be the only thing in this engine whose outcome depends on when you
+  happened to look, and `fold` exists precisely so that replaying the same events
+  lands where the live run did. The goblin carries a `patience` counter that ticks
+  down once per folded event it survives; at zero it leaves
+- **`patience` rides on the monster, not on the save's top level**, so it cannot
+  outlive the goblin it belongs to and flee the *next* one early
+- **The fold loop holds the monster it was facing across the event.** `dealDamage`
+  can kill and respawn inside a single event, swapping `state.monster` underneath;
+  without the identity check a freshly spawned goblin would be billed for the
+  event that killed its predecessor and start a tick short. Pinned by a test
+- **10 events, measured rather than guessed.** Escape rates over six seeds × 90
+  days, by how well the hero is kept up: at 8 events an attentive player loses
+  19.2%, at 10 it is 5.9%, at 11 it is 3.9%, and at 14 the feature never fires at
+  all. A hero who never opens their inventory loses 50.7% at the same setting.
+  That spread is the design: the deadline is a DPS check, so gear is the whole
+  defence and falling behind is what makes goblins start getting away
+- **Fleeing costs the prize and nothing else** — it still credits the boss cycle
+  exactly as a kill would, because it stood in the vanguard's place and ate the
+  same stretch of clock. Charging the boss cycle as well would make a fled goblin
+  strictly worse than the trash mob it displaced, which is the tax this feature
+  was built not to be
+- **The death gate needed twenty seeds, not eight.** The eight-seed fix from the
+  previous entry was an improvement and still not enough: it left a standard
+  error of ±0.33 deaths against a threshold only ~0.35 away, so it kept flipping
+  on changes that moved the true mean by nothing. Twenty brings that to ±0.23 and
+  clears every configuration — 20 days with no goblin, 17 with one that never
+  flees, 24 with the shipped one. The whole gate suite still runs in 0.45s
+
 ### The loot goblin, and the balance gate it exposed (2026-07-28)
 
 - **A sub-boss that turns up in place of trash, 5% of non-boss spawns.** ×3 HP,

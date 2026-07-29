@@ -180,15 +180,21 @@ function assertBalance() {
   // event, common enough that the HP bar is not decoration. Measured against the
   // attentive player, since that is who the pacing is written for.
   //
-  // Averaged over eight seeds, because one seed cannot carry this check. An
-  // attentive hero dies 0-4 times in a 90-day run and the gate is a ratio over
-  // that count, so a single run swings between "every 11 days" and "never" on
-  // the seed alone — measured: 2,1,3,2,3,0,2,0 deaths across eight seeds of an
-  // unchanged engine, which fails this gate three times in eight. It was passing
-  // on 0xC0FFEE by luck, and any change that moved the stream re-rolled the
-  // coin. The mean is stable to a tenth of a death across the same eight, which
-  // is what makes it an assertion rather than a lottery.
-  const DEATH_SEEDS = [0xC0FFEE, 1, 2, 3, 4, 5, 6, 7];
+  // Averaged over twenty seeds, because a single run cannot carry this check
+  // and neither can eight. An attentive hero dies 0-4 times in a 90-day run and
+  // the gate is a ratio over that count, so one seed swings between "every 11
+  // days" and "never" — measured: 2,1,3,2,3,0,2,0 across eight seeds of an
+  // *unchanged* engine, which fails this gate three times in eight. It was
+  // passing on 0xC0FFEE by luck alone, and any change that moved the stream
+  // re-rolled the coin.
+  //
+  // Eight seeds was the first fix and was not enough either: it left a standard
+  // error of ±0.33 deaths against a threshold only ~0.35 away, so the gate still
+  // flipped on changes that moved the mean by nothing. Twenty brings that to
+  // ±0.23 and puts every configuration clear of the bound — 20 days with no
+  // goblin, 17 with a goblin that never flees, 24 with the shipped one. The
+  // bound stopped being the thing under test, which is the point.
+  const DEATH_SEEDS = Array.from({ length: 20 }, (_, i) => (i === 0 ? 0xC0FFEE : i));
   const deathRuns = DEATH_SEEDS.map(seed => run(90, 300, false, { seed }));
   const meanDeaths = deathRuns.reduce((s, r) => s + r.state.counters.deaths, 0) / DEATH_SEEDS.length;
   const meanCapDay = deathRuns.reduce((s, r) => s + (r.capDay || 150), 0) / DEATH_SEEDS.length;

@@ -120,6 +120,16 @@ const SCENES = {
       return st;
     },
   },
+  goblinflee: {
+    blurb: 'the goblin gives up on you and leaves with the sack (flashes)',
+    build: now => {
+      const st = hero(now, { cls: 'rogue', name: 'Gavin', level: 15, zone: 'caves', gold: 12400, hpFrac: 0.55 });
+      st.monster = monster('caves', C.GOBLIN.id, 14, 0.34);
+      st.anim = [anim('goblinflee', 4000, { name: C.GOBLIN.name }, now)];
+      st.ticker = [R.c('dim', 'it slipped away with the sack')];
+      return st;
+    },
+  },
   goblinloot: {
     blurb: "the goblin's sack bursts — the gold arm of the payout",
     build: now => {
