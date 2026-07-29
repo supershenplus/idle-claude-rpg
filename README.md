@@ -16,8 +16,10 @@ game tick: every command Claude runs is an attack, passing tests grant XP,
 ```
 
 The HUD picks a layout from `$COLUMNS`: 5-line sprites with the monster centred
-at ≥76 cols, one-line sprites at ≥50, and a single status line below that. Force
-one with `RPG_HUD=big|compact|mini`.
+at ≥76 cols, one-line sprites at ≥50, and a single status line below that. Pin
+one with `/hero hud big|compact|mini` (and `/hero hud auto` to go back to
+picking by width) — it lives in your save and takes effect on the next frame.
+`RPG_HUD=big|compact|mini` in the environment overrides both.
 
 Every class animates its own attack over the six frames of a hit — the wizard
 gathers its orb and is thrown back by the discharge, the knight steps onto a

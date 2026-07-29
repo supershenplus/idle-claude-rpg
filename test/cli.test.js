@@ -348,3 +348,64 @@ test('reset --confirm deletes every file the save is spread across', () => {
   }
   assert.strictEqual(S.loadState(), null, 'a hero can still be loaded after a reset');
 });
+
+// ---- /hero hud ----
+// The layout pin is the only setting the game stores, and it is stored in the
+// save rather than in settings.json on purpose: the skill is allowed to run
+// rpg.js and nothing else, so a preference it can reach has to live here.
+
+function runHud(cols, ...args) {
+  return R.visible(execFileSync('node', [CLI, 'hud', ...args], {
+    env: { ...process.env, IDLE_RPG_HOME: HOME, COLUMNS: String(cols), RPG_HUD: '' },
+    encoding: 'utf8',
+  }));
+}
+
+test('hud <mode> pins a layout and hud auto clears it', () => {
+  seed();
+  runHud(100, 'compact');
+  assert.strictEqual(S.loadState().hud, 'compact');
+
+  // auto is stored as the *absence* of the key, so a save made before this
+  // command existed is already in the right state rather than needing a
+  // migration to give it one.
+  runHud(100, 'auto');
+  assert.ok(!('hud' in S.loadState()), 'auto should remove the key, not set it to "auto"');
+});
+
+test('hud warns about a layout too wide for the terminal but pins it anyway', () => {
+  seed();
+  const out = runHud(60, 'big');
+  assert.match(out, /≥76 cols and this terminal is 60/);
+  assert.match(out, /Pinned anyway/);
+  assert.strictEqual(S.loadState().hud, 'big', 'the warning must not have blocked the pin');
+});
+
+test('hud stays quiet about width when there is none to read', () => {
+  seed();
+  // Run through a tool's captured stdout with no COLUMNS: inventing a warning
+  // about an 80-column terminal nobody is sitting at is worse than saying
+  // nothing, because the player cannot tell it is a guess.
+  const out = R.visible(execFileSync('node', [CLI, 'hud', 'big'], {
+    env: { ...process.env, IDLE_RPG_HOME: HOME, COLUMNS: '', RPG_HUD: '' }, encoding: 'utf8',
+  }));
+  assert.doesNotMatch(out, /cols and this terminal/);
+  assert.strictEqual(S.loadState().hud, 'big');
+});
+
+test('hud rejects an unknown mode without touching the save', () => {
+  seed();
+  runHud(100, 'compact');
+  const { out, code } = runFail('hud', 'sideways');
+  assert.match(out, /Unknown HUD mode "sideways"/);
+  assert.strictEqual(code, 1);
+  assert.strictEqual(S.loadState().hud, 'compact', 'a rejected mode changed the pin');
+});
+
+test('hud reports the $RPG_HUD override that would silently beat it', () => {
+  seed();
+  const out = R.visible(execFileSync('node', [CLI, 'hud', 'compact'], {
+    env: { ...process.env, IDLE_RPG_HOME: HOME, COLUMNS: '100', RPG_HUD: 'mini' }, encoding: 'utf8',
+  }));
+  assert.match(out, /\$RPG_HUD=mini is set, and overrides this/);
+});

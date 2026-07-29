@@ -557,3 +557,54 @@ test('a coalesced hit cannot shove the compact monster off its centre', () => {
     compactColumn({ dmg: 38, crit: true, counter: 7 }),
     'the damage mark pushed the monster off the terminal midpoint');
 });
+
+// ---- HUD layout precedence ----
+// Three tiers pick a layout, and the two that aren't width are new: a mode
+// pinned in the save (`/hero hud <mode>`) and $RPG_HUD above it. Line count is
+// the discriminator because it *is* the contract — each layout is documented by
+// how many lines it occupies, and the header comment claiming compact was three
+// of them was wrong for as long as the comment existed.
+const HUD_LINES = { big: 8, compact: 4, mini: 1 };
+
+function renderPinned(cols, hud, env = {}) {
+  const st = E.newState('ranger', 'Testfixture', Date.now());
+  if (hud !== undefined) st.hud = hud;
+  S.saveState(st);
+  return execFileSync('node', [CLI], {
+    env: { ...process.env, COLUMNS: String(cols), IDLE_RPG_HOME: HOME, RPG_HUD: '', ...env },
+    input: '{}', encoding: 'utf8',
+  }).trim().split('\n').length;
+}
+
+test('a pinned layout beats the one the width would have picked', () => {
+  // 100 cols is comfortably `big` territory, which is the point: if the pin
+  // were being ignored these would all come back as 8.
+  for (const mode of ['compact', 'mini']) {
+    assert.strictEqual(renderPinned(100, mode), HUD_LINES[mode],
+      `pinned ${mode} did not survive at 100 cols`);
+  }
+  // …and the other direction: `big` pinned into a terminal too narrow to choose
+  // it. Pinning warns in the CLI but is obeyed here.
+  assert.strictEqual(renderPinned(60, 'big'), HUD_LINES.big, 'pinned big was overridden by width');
+});
+
+test('$RPG_HUD overrides a pinned layout', () => {
+  assert.strictEqual(renderPinned(100, 'big', { RPG_HUD: 'mini' }), HUD_LINES.mini,
+    'the saved pin won over the environment override');
+});
+
+test('an unrecognised pin falls back to width instead of rendering nothing', () => {
+  // `hud` is a field in a file the player can edit. An unknown value used to
+  // fall through every layout branch, which renders an empty status line —
+  // failing in the one way the HUD is built never to fail.
+  for (const junk of ['sideways', '', 'BIG ', 42, null]) {
+    assert.strictEqual(renderPinned(100, junk), HUD_LINES.big,
+      `pin ${JSON.stringify(junk)} did not fall back to the width-picked layout`);
+  }
+});
+
+test('auto is the absence of a pin, not a fourth layout', () => {
+  assert.strictEqual(renderPinned(100, undefined), HUD_LINES.big);
+  assert.strictEqual(renderPinned(60, undefined), HUD_LINES.compact);
+  assert.strictEqual(renderPinned(40, undefined), HUD_LINES.mini);
+});

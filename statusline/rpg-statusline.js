@@ -5,9 +5,10 @@
 // a trigger), folds pending events, renders a battle scene sized to $COLUMNS.
 // Never throws: worst case prints a minimal fallback and exits 0.
 //
-// Three layouts, picked by width (override with RPG_HUD=big|compact|mini):
+// Three layouts, picked by width unless the save pins one (`/hero hud <mode>`)
+// or $RPG_HUD overrides both (RPG_HUD=big|compact|mini):
 //   big     8 lines — 5-line sprites, monster centred, name/level/HP beneath
-//   compact 3 lines — one-line sprites, monster centred
+//   compact 4 lines — one-line sprites, monster centred
 //   mini    1 line  — level, HP, monster name
 //
 // The monster sits on the terminal's midpoint and the hero is placed a fixed
@@ -54,8 +55,15 @@ function main(stdin) {
   const zone = C.zoneById(h.zone);
   const heroArt = sprites.heroes[h.class] || sprites.heroes.wizard;
 
+  // Three tiers, most explicit first: $RPG_HUD for a one-off override from the
+  // shell, then the layout the save pins (`/hero hud <mode>`), then the width.
+  // The saved value is validated rather than trusted — it is a field in a file
+  // the player can edit, and an unknown mode would fall through every branch
+  // below and render nothing at all.
+  const pinned = R.HUD_MODES.includes(state.hud) ? state.hud : null;
   const mode = (process.env.RPG_HUD || '').toLowerCase()
-    || (cols >= 76 ? 'big' : cols >= 50 ? 'compact' : 'mini');
+    || pinned
+    || R.hudFor(cols);
 
   // ---- line 1: identity / vitals ----
   const xpNeed = h.level >= B.LEVEL_CAP ? 0 : B.xpToNext(h.level);

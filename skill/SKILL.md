@@ -1,6 +1,6 @@
 ---
 name: hero
-description: idle-claude-rpg controls — init, status, shop, zone, inventory, equip, upgrade, sell, stats. Use when the user types /hero or asks about their idle RPG hero, their loot, or the monster in the statusline.
+description: idle-claude-rpg controls — init, status, shop, zone, inventory, equip, upgrade, sell, stats, hud. Use when the user types /hero or asks about their idle RPG hero, their loot, the monster in the statusline, or how the HUD is laid out.
 allowed-tools: Bash(node {{REPO}}/bin/rpg.js *)
 ---
 
@@ -46,6 +46,11 @@ Map the user's arguments directly onto it:
   relay the preview, then re-run with `--confirm`. Insight is never reset and never refunded,
   and nothing about paragon touches level, gear, gold or zone — say so if the user worries
   that hitting the cap costs them anything.
+- HUD layout: `/hero hud` shows the current layout and the three options; `/hero hud big|compact|mini`
+  pins one and `/hero hud auto` goes back to picking by terminal width. Immediate, no `--confirm` —
+  it changes nothing but how the statusline draws, and `auto` undoes it. Pinning a layout wider than
+  the terminal is allowed and warns; relay the warning with the rest of the output. Takes effect on
+  the next statusline frame, so there is nothing to restart.
 - `/hero reset` → warn that this deletes the hero, and only run with `--confirm` after the user confirms
 
 ## First-run init

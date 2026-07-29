@@ -32,6 +32,28 @@ function requireSave() {
   return state;
 }
 
+const HUD_BLURB = {
+  big: '8 lines, 5-line sprites',
+  compact: '4 lines, one-line sprites',
+  mini: '1 line, no art',
+};
+
+// The terminal's width, or 0 when there is none to read. Guessing 80 the way
+// the statusline does would be wrong here: this command *warns* about width,
+// and a guess would either invent a warning or suppress a real one. Zero means
+// "say nothing about width", which is the honest answer when run through a
+// tool's captured stdout rather than in front of a person.
+function termCols() {
+  return process.stdout.columns || parseInt(process.env.COLUMNS, 10) || 0;
+}
+
+// $RPG_HUD sits above the saved pin, so a player who set it once in settings.json
+// and forgot would otherwise watch `/hero hud` change nothing, twice.
+function envNote() {
+  const env = (process.env.RPG_HUD || '').toLowerCase();
+  if (env) console.log(R.c('dim', `  Note: $RPG_HUD=${env} is set, and overrides this.`));
+}
+
 function itemLine(it, i) {
   // Upgraded stats, since those are the ones actually fighting for you. The
   // rolled numbers stay on the item and show up in `/hero upgrade`.
@@ -605,6 +627,50 @@ const commands = {
     if (c.insightEarned) console.log(`  insight earned ${c.insightEarned} (${st.hero.insight || 0} unspent) — /hero insight`);
   },
 
+  hud() {
+    const st = requireSave();
+    const cols = termCols();
+    const cur = R.HUD_MODES.includes(st.hud) ? st.hud : 'auto';
+    const want = (args[0] || '').toLowerCase();
+
+    // Reporting the *effective* layout matters more than reporting the setting:
+    // "auto" alone doesn't tell a player which of the three they are looking at.
+    const effective = m => m === 'auto' ? (cols ? R.hudFor(cols) : null) : m;
+
+    if (!want) {
+      const eff = effective(cur);
+      console.log(`\n  HUD   ${cur === 'auto' ? 'auto — follows terminal width' : `pinned to ${cur}`}`);
+      console.log(`  Now   ${eff ? `${eff} — ${HUD_BLURB[eff]}` : 'unknown here (no terminal width to read)'}`);
+      if (cols) console.log(`  Width ${cols} cols` + (cur === 'auto' ? '' : `, which auto would draw as ${R.hudFor(cols)}`));
+      const need = m => R.HUD_MIN_COLS[m] ? `≥${R.HUD_MIN_COLS[m]} cols` : 'any width';
+      console.log('\n  ' + R.HUD_MODES.map(m => `${m.padEnd(7)} ${need(m).padEnd(10)} ${HUD_BLURB[m]}`).join('\n  '));
+      console.log(`\n  Set it: /hero hud ${[...R.HUD_MODES, 'auto'].join(' | ')}`);
+      envNote();
+      return;
+    }
+
+    if (want !== 'auto' && !R.HUD_MODES.includes(want)) {
+      console.log(`Unknown HUD mode "${want}". Options: ${[...R.HUD_MODES, 'auto'].join(', ')}`);
+      process.exit(1);
+    }
+
+    if (want === 'auto') delete st.hud; else st.hud = want;
+    S.saveState(st);
+
+    // Warn and obey. A pin too wide for the terminal shears the sprite rows
+    // rather than failing, so the player has to be told — but it is their
+    // terminal, and `auto` is one word away.
+    if (want !== 'auto' && cols && cols < R.HUD_MIN_COLS[want]) {
+      console.log(`\n  ${R.c('brightYellow', '⚠')} ${want} wants ≥${R.HUD_MIN_COLS[want]} cols and this terminal is ${cols} —`);
+      console.log('    the sprite rows will wrap and shear. Pinned anyway.');
+    }
+    console.log(want === 'auto'
+      ? `\n  HUD back to auto — the layout follows terminal width again${cols ? ` (${R.hudFor(cols)} at ${cols} cols)` : ''}.`
+      : `\n  HUD pinned to ${want} — ${HUD_BLURB[want]}.`);
+    console.log('  Takes effect on the next statusline frame.');
+    envNote();
+  },
+
   fold() {
     const ok = S.tryFold(Date.now());
     console.log(ok ? 'Folded.' : 'Nothing to fold (no save, or another fold is running).');
@@ -629,7 +695,7 @@ const commands = {
 
 const fn = commands[cmd];
 if (!fn) {
-  console.log('idle-claude-rpg — commands: init status zone shop inventory equip upgrade insight sell stats fold sim reset');
+  console.log('idle-claude-rpg — commands: init status zone shop inventory equip upgrade insight sell stats hud fold sim reset');
   process.exit(cmd ? 1 : 0);
 }
 fn();
