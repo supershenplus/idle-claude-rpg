@@ -19,6 +19,68 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### The sitting: what this afternoon actually bought you (2026-07-30)
+
+- **The backlog item was one line — "per-session stats view" — and the whole
+  design is in the word *session*.** The obvious reading is Claude Code's:
+  the hook already stamps `session_id` onto every event, it is sitting unused in
+  `state.js`, and keying off it is three lines. It is also wrong, and wrong in a
+  way that only shows up in play. The save is global — `IDLE_RPG_HOME`, one hero
+  behind every repo and every open window — so two Claude Code sessions running
+  at once would each reset the other's totals on their first fold, and the view
+  would measure nothing but which window folded last. The id is per-window; the
+  hero is not
+- **So a sitting is a stretch at the keyboard, and the game already knew where
+  those end.** `OFFLINE_MIN_GAP_MS` is 30 minutes with no folds, which is the
+  existing definition of "you left" — it is what triggers away progress. Reusing
+  it means the sitting ends exactly when the away window begins, by construction
+  rather than by two constants that have to be kept in agreement. It also makes
+  the boundary work for the case the session id gets backwards: closing the lid
+  and reopening it in a different repo is one absence and two sittings, which is
+  what it feels like, and would have been one continuous session by id
+- **The totals are a delta, not a second tally, and that is the part worth
+  keeping.** The first sketch incremented `state.session.kills` next to
+  `state.counters.kills` at every reward site — about fifteen of them across
+  `resolveKill`, `rollLoot`, `addToInventory`, `applyTime` and `applyEvent`. That
+  is fifteen chances for the next feature to update one and not the other, and
+  the failure is silent: the two blocks print different numbers and neither is
+  obviously the wrong one. Snapshotting the counters at the start of the sitting
+  and subtracting on read makes them the *same* number read twice, so they cannot
+  drift. New reward paths are included automatically, which is the real tell that
+  it is the right shape
+- **The away window's take is charged to neither sitting, deliberately.**
+  `closeSession` runs before the away rewards land and `openSession` after, so
+  the kills an absence pays for fall in the gap between the snapshots. Charging
+  them to the closed sitting would report them as work you did at the keyboard;
+  charging them to the new one opens every morning at "you have already killed
+  twelve things". The away summary and its banner already report them, and once
+  is right
+- **A closed sitting is kept, because the live one is empty exactly when you
+  look at it.** The realistic sequence is: sit down, run `/hero stats`, and the
+  sitting is thirty seconds old with nothing in it. `lastSession` holds the
+  previous one's frozen totals and prints as one dim line. It ends at
+  `lastTickAt`, not at `now` — `now` is when you came back, and billing the
+  sitting for the absence would report three hours of work as eleven
+- **Two counters had to be added, both because nothing existing could stand in.**
+  `xpEarned`, counted in `addXp` after the class multiplier and before the cap
+  branch, because `hero.xp` resets on every level and zeroes at the cap — it
+  measures progress, never earnings, so it can't be differenced. And `drops`, for
+  loot kept, since `vendored` only counted the half that went straight to the
+  merchant. Both default with `|| 0` on read, so no migration: an old save grows
+  a sitting on its next fold rather than at load
+- **The view leads with the sitting and rounds the rate honestly.** Lifetime
+  totals answer "how far have I got", which the status line is showing you all
+  day; the sitting answers "what did the last few hours buy me", which nothing
+  else did. Kills-per-hour is the number an idle game is actually judged on, so
+  it is printed — but only past ten minutes, because three kills in the first
+  minute is 180/h and a lie. Both halves of the drop filter are shown (`3 kept,
+  11 vendored`), since a run with no upgrades in it looks identical to a dead one
+  if you only report the kept side
+- **Cost:** ~90 lines in `lib/engine.js`, ~60 in `bin/rpg.js`, a `span()` in
+  `render.js` (`relTime` answers "how long ago" in one coarse unit and rounds
+  2h14m to "2h", which is the part a session length is read for), and 17 tests.
+  365 pass
+
 ### The animation tests were measuring the machine, not the renderer (2026-07-30)
 
 - **Found by running the suite, not by looking for it.** `node --test

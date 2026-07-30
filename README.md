@@ -296,6 +296,24 @@ legacy gear doesn't permanently outclass every new drop for its slot.
 
 All of it also works token-free as `! node bin/rpg.js <cmd>`.
 
+### `/hero stats` and the sitting
+
+`stats` opens on **this sitting** — kills, gold, XP, levels, commits, pushes,
+tests, lines and loot since you sat down — and prints the lifetime totals under
+it. A sitting ends the same way an away window starts: after
+`OFFLINE_MIN_GAP_MS` (30 min) with no folds. The closed one is kept and shown as
+a one-liner, so opening a fresh window still has something to report before the
+first monster dies.
+
+Two things it deliberately is not. It is **not** keyed on Claude Code's session
+id, even though the hook carries one: the save is global, so one hero is shared
+by every repo and every open window, and two concurrent sessions would reset
+each other's totals all day. And the away window's take lands in **neither**
+sitting — the away summary already reports it, and it is not keyboard work.
+
+The numbers are deltas against a snapshot of the lifetime counters rather than a
+second set of tallies, so the two blocks can never drift apart.
+
 ## Event → game mapping
 
 | You (Claude) do | Hero does |

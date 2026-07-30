@@ -409,3 +409,99 @@ test('hud reports the $RPG_HUD override that would silently beat it', () => {
   }));
   assert.match(out, /\$RPG_HUD=big is set, and overrides this/);
 });
+
+// ---------- `/hero stats` ----------
+//
+// The engine tests pin what a sitting *is*. These pin the only things the view
+// can get wrong on its own: showing the lifetime totals where the sitting's
+// belong, and printing a wall of zeroes at someone who just sat down.
+
+test('stats reports the sitting and the lifetime separately', () => {
+  seed(st => {
+    Object.assign(st.counters, {
+      kills: 500, bossKills: 4, commits: 200, goldEarned: 90_000,
+      linesWritten: 40_000, testsPassed: 300, testsFailed: 12, drops: 30, vendored: 60,
+    });
+    E.openSession(st, Date.now() - 2 * 3600_000 - 14 * 60_000);
+    st.counters.kills += 143;
+    st.counters.bossKills += 2;
+    st.counters.commits += 9;
+    st.counters.goldEarned += 12_405;
+    st.counters.xpEarned = 8_420;
+    st.counters.drops += 3;
+    st.counters.vendored += 11;
+  });
+  const out = run('stats');
+
+  assert.match(out, /This sitting — 2h 14m:/);
+  assert.match(out, /kills 143/, 'the sitting borrowed the lifetime kill count');
+  assert.match(out, /2 bosses/);
+  assert.match(out, /gold \+12,405g/);
+  assert.match(out, /commits 9\b/);
+  assert.match(out, /loot 3 kept, 11 vendored/);
+  // 143 kills over 2h14m ≈ 64/h — reported because the sitting is long enough
+  // for the division to mean something.
+  assert.match(out, /kills 143 \(6[0-9]\/h\)/);
+
+  assert.match(out, /Lifetime \(\d+ days\):/);
+  assert.match(out, /kills 643 \(6 bosses\)/, 'the lifetime block lost the sitting');
+});
+
+// Just the sitting block — the lifetime block below it legitimately prints
+// `kills 0` for a fresh hero, and a whole-output match would read that as a pass.
+const sitting = out => out.slice(out.indexOf('This sitting'), out.indexOf('Lifetime'));
+
+test('a sitting nobody has played yet says so instead of printing zeroes', () => {
+  seed(st => { E.openSession(st, Date.now()); });
+  const out = run('stats');
+  assert.match(out, /nothing yet — no kills, no commits, no code/);
+  assert.doesNotMatch(sitting(out), /kills 0/);
+});
+
+test('stats falls back to the last sitting when this one is empty', () => {
+  const now = Date.now();
+  seed(st => {
+    E.openSession(st, now);
+    st.lastSession = {
+      startedAt: now - 7 * 3600_000, endedAt: now - 4 * 3600_000, ms: 3 * 3600_000,
+      fromLevel: 8, levels: 2, kills: 210, bossKills: 1, goblinKills: 0, goblinFled: 0,
+      deaths: 1, commits: 12, pushes: 3, testsPassed: 40, testsFailed: 2,
+      linesWritten: 3000, goldEarned: 18_900, xpEarned: 4000, insightEarned: 0,
+      drops: 4, vendored: 9,
+    };
+  });
+  const out = run('stats');
+  assert.match(out, /before that — 3h 00m, ended 4h ago: 210 kills · \+18,900g · 12 commits/);
+});
+
+test('a quiet last sitting is left unsaid rather than reported as nothing', () => {
+  const now = Date.now();
+  seed(st => {
+    E.openSession(st, now);
+    st.lastSession = { startedAt: now - 3600_000, endedAt: now, ms: 3600_000, levels: 0, kills: 0 };
+  });
+  assert.doesNotMatch(run('stats'), /before that/);
+});
+
+test('a short sitting reports no rate, because it would not be one', () => {
+  seed(st => {
+    E.openSession(st, Date.now() - 60_000);
+    st.counters.kills += 3;
+  });
+  const out = run('stats');
+  assert.match(out, /kills 3(?!\s*\()/, `want a bare kill count, got: ${out}`);
+});
+
+test('span keeps the minutes relTime deliberately throws away', () => {
+  // The two formatters answer different questions and round differently for it.
+  // A sitting reported as "2h" hides the fourteen minutes it is being read for.
+  assert.strictEqual(R.span(0), '0s');
+  assert.strictEqual(R.span(45_000), '45s');
+  assert.strictEqual(R.span(59_999), '59s');
+  assert.strictEqual(R.span(60_000), '1m');
+  assert.strictEqual(R.span(59 * 60_000), '59m');
+  assert.strictEqual(R.span(3600_000), '1h 00m');
+  assert.strictEqual(R.span(2 * 3600_000 + 14 * 60_000), '2h 14m');
+  assert.strictEqual(R.span(25 * 3600_000), '1d 1h');
+  assert.strictEqual(R.span(-5), '0s', 'a clock that stepped back reported a negative span');
+});

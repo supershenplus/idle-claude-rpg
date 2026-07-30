@@ -176,6 +176,5 @@ this file stays readable as a list of things to do.
 - [ ] Cosmetic titles from the shop; trinket special affixes
 - [ ] Shop daily rotation (seeded by date+zone) + "Boss Drum" consumable to arm the boss early
 - [ ] Heisenbug gag: sprite renders in a different spot each frame (it moves when observed)
-- [ ] Per-session stats view
 - [ ] Edit/Write `tool_response` schema is undocumented — revisit if a future
   Claude Code version documents per-tool line counts (we count from `tool_input`)

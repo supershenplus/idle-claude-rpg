@@ -1247,3 +1247,120 @@ test('a trash monster is untouched by the away window', () => {
     assert.strictEqual(s.counters.goblinFled || 0, 0);
   } finally { restore(); }
 });
+
+// ---------- the sitting ----------
+//
+// The property that matters is that the sitting and the lifetime counters can
+// never disagree, because the sitting is a delta rather than a second tally.
+// So the tests are about the *boundary*: when a sitting ends, what it keeps,
+// and what the away window is allowed to put in it.
+
+test('a fresh hero opens a sitting at zero', () => {
+  const s = fresh();
+  const sess = E.sessionStats(s, T0);
+  assert.ok(sess, 'newState left no sitting to report');
+  assert.strictEqual(sess.kills, 0);
+  assert.strictEqual(sess.ms, 0);
+  assert.strictEqual(sess.fromLevel, 1);
+  assert.ok(E.sessionIsQuiet(sess), 'a hero who has done nothing is not quiet');
+});
+
+test('the sitting tracks the lifetime counters exactly, as a delta', () => {
+  const s = fresh();
+  s.counters.kills = 40;
+  s.counters.commits = 9;
+  s.counters.goldEarned = 500;
+  E.openSession(s, T0);                      // baseline taken here
+  s.counters.kills += 3;
+  s.counters.commits += 1;
+  s.counters.goldEarned += 120;
+
+  const sess = E.sessionStats(s, T0 + 60_000);
+  assert.strictEqual(sess.kills, 3);
+  assert.strictEqual(sess.commits, 1);
+  assert.strictEqual(sess.goldEarned, 120);
+  assert.strictEqual(sess.ms, 60_000);
+  assert.ok(!E.sessionIsQuiet(sess));
+  // and the lifetime totals are untouched by any of it
+  assert.strictEqual(s.counters.kills, 43);
+});
+
+test('a sitting reports levels gained, which hero.xp cannot', () => {
+  const s = fresh();
+  E.openSession(s, T0);
+  E.addXp(s, B.xpToNext(1) + B.xpToNext(2), T0);
+  const sess = E.sessionStats(s, T0);
+  assert.strictEqual(sess.fromLevel, 1);
+  assert.ok(sess.levels >= 2, `want 2+ levels, got ${sess.levels}`);
+  assert.ok(sess.xpEarned > 0, 'xp earned was not counted');
+  assert.ok(!E.sessionIsQuiet(sess));
+});
+
+test('a hand-edited save cannot make a sitting run backwards', () => {
+  const s = fresh();
+  s.counters.kills = 50;
+  E.openSession(s, T0);
+  s.counters.kills = 10;                     // someone edited state.json
+  assert.strictEqual(E.sessionStats(s, T0).kills, 0);
+});
+
+test('an away gap closes the sitting and opens a new one', () => {
+  const s = fresh();
+  s.counters.kills = 12;
+  s.counters.commits = 4;
+  E.openSession(s, T0);
+  s.counters.kills += 30;
+  s.counters.commits += 6;
+  s.lastTickAt = T0 + 3600_000;              // an hour of work
+
+  const back = s.lastTickAt + 5 * 3600_000;  // then five hours away
+  E.fold(s, [], back);
+
+  const last = s.lastSession;
+  assert.ok(last, 'the away gap threw the sitting away instead of keeping it');
+  assert.strictEqual(last.kills, 30);
+  assert.strictEqual(last.commits, 6);
+  assert.strictEqual(last.ms, 3600_000, 'the sitting was billed for the absence');
+  assert.strictEqual(last.endedAt, T0 + 3600_000,
+    'the sitting ended when you came back rather than when you left');
+
+  const now = E.sessionStats(s, back);
+  assert.strictEqual(now.startedAt, back);
+  assert.strictEqual(now.commits, 0, 'the new sitting inherited the old one');
+});
+
+test('the away window\'s take lands in neither sitting', () => {
+  // It is reported by the away summary and it is not keyboard work, so charging
+  // it to the sitting on either side of the gap would overstate that one.
+  const s = fresh();
+  E.openSession(s, T0);
+  s.lastTickAt = T0 + 60_000;
+  const back = s.lastTickAt + 4 * 3600_000;
+  E.fold(s, [], back);
+
+  const awayKills = Math.floor(4 * B.OFFLINE_KILLS_PER_HOUR);
+  assert.ok(awayKills > 0, 'the fixture granted no away progress to misplace');
+  assert.strictEqual(s.counters.kills, awayKills, 'the away window paid nothing');
+  assert.strictEqual(s.lastSession.kills, 0, 'the closed sitting was paid for the absence');
+  assert.strictEqual(E.sessionStats(s, back).kills, 0, 'the new sitting was paid for the absence');
+});
+
+test('a short gap leaves the sitting alone', () => {
+  const s = fresh();
+  E.openSession(s, T0);
+  s.counters.kills += 5;
+  s.lastTickAt = T0 + 60_000;
+  E.fold(s, [], s.lastTickAt + B.OFFLINE_MIN_GAP_MS - 1000);
+  assert.strictEqual(s.lastSession, undefined, 'a coffee break ended the sitting');
+  assert.strictEqual(E.sessionStats(s, T0).kills, 5);
+});
+
+test('a save from before sittings existed grows one on its next fold', () => {
+  // The field is pure derived bookkeeping — there is nothing in an old save to
+  // migrate *from*, so the fold opens one rather than the loader inventing one.
+  const s = fresh();
+  delete s.session;
+  assert.strictEqual(E.sessionStats(s, T0), null, 'a missing sitting reported fabricated zeroes');
+  E.fold(s, [], T0 + 61_000);
+  assert.ok(E.sessionStats(s, T0 + 61_000), 'the fold left the old save without a sitting');
+});

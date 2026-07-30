@@ -231,6 +231,72 @@ function insightBuy(st, id, all) {
   console.log(`${id} ${from} → ${pts} for ${spend} Insight (+${gain}% ${t.of}). ${st.hero.insight} left.`);
 }
 
+// ---------- the sitting, for `/hero stats` ----------
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many || one + 's'}`;
+
+// `/hero stats` opens on the sitting rather than the lifetime totals. The
+// lifetime block answers "how far have I got", which the status line is already
+// showing you all day; this one answers "what did this afternoon actually buy
+// me", and nothing else in the game reports that.
+function sittingBlock(st, now) {
+  const s = E.sessionStats(st, now);
+  if (!s) return;                     // pre-sitting save that hasn't folded yet
+
+  console.log(`\n  This sitting — ${R.span(s.ms)}:`);
+  if (E.sessionIsQuiet(s)) {
+    console.log(R.c('dim', '  nothing yet — no kills, no commits, no code.'));
+  } else {
+    for (const line of sittingLines(s)) console.log(line);
+  }
+
+  // Which is the whole reason a closed sitting is kept: sit down, run
+  // `/hero stats`, and the live one is thirty seconds old and empty. A quiet
+  // previous sitting is skipped — "last sitting: 0 kills" is worse than silence.
+  const last = st.lastSession;
+  if (last && !E.sessionIsQuiet(last)) {
+    const took = [`${plural(last.kills, 'kill')}`,
+      last.goldEarned && `+${R.fmtGold(last.goldEarned)}`,
+      last.commits && plural(last.commits, 'commit')].filter(Boolean).join(' · ');
+    console.log(R.c('dim',
+      `  before that — ${R.span(last.ms)}, ended ${R.relTime(Math.max(0, now - last.endedAt))} ago: ${took}`));
+  }
+}
+
+function sittingLines(s) {
+  const out = [];
+
+  // Rate is the number an idle game is really being judged on, but it needs
+  // enough clock under it to mean anything — three kills in the first minute is
+  // 180/h and a lie. Below the floor the span is reported on its own and the
+  // player can do the division if they care.
+  const RATE_MIN_MS = 10 * 60 * 1000;
+  const rate = s.ms >= RATE_MIN_MS && s.kills
+    ? R.c('dim', ` (${(s.kills / (s.ms / 3600000)).toFixed(0)}/h)`) : '';
+  const flavour = [
+    s.bossKills && plural(s.bossKills, 'boss', 'bosses'),
+    s.goblinKills && plural(s.goblinKills, 'goblin'),
+  ].filter(Boolean).join(' · ');
+  out.push(`  kills ${s.kills}${rate}${flavour ? ` — ${flavour}` : ''}`
+    + (s.deaths ? `   deaths ${s.deaths}` : ''));
+
+  const lvl = s.levels ? `  level ${s.fromLevel} → ${s.fromLevel + s.levels}` : '';
+  out.push(`  gold +${R.fmtGold(s.goldEarned)}   xp +${s.xpEarned.toLocaleString('en-US')}${lvl}`);
+
+  out.push(`  commits ${s.commits}  pushes ${s.pushes}  tests ${s.testsPassed}✓/${s.testsFailed}✗`
+    + `  lines ${s.linesWritten.toLocaleString('en-US')}`);
+
+  // Both halves of the drop filter, because "12 vendored" is what a run with no
+  // upgrades in it looks like from the inside, and reporting only the kept side
+  // makes a busy afternoon read as a dead one.
+  if (s.drops || s.vendored) {
+    out.push(`  loot ${s.drops} kept, ${s.vendored} vendored`
+      + (s.goblinFled ? R.c('dim', `  ·  ${plural(s.goblinFled, 'goblin')} got away`) : ''));
+  }
+  if (s.insightEarned) out.push(`  insight +${s.insightEarned} — /hero insight`);
+  return out;
+}
+
 const commands = {
 
   init() {
@@ -618,7 +684,9 @@ const commands = {
   stats() {
     const st = requireSave();
     const c = st.counters;
-    const days = Math.max(1, Math.round((Date.now() - st.createdAt) / 86400000));
+    const now = Date.now();
+    sittingBlock(st, now);
+    const days = Math.max(1, Math.round((now - st.createdAt) / 86400000));
     console.log(`\n  Lifetime (${days} days):`);
     console.log(`  kills ${c.kills} (${c.bossKills} bosses)  deaths ${c.deaths}`);
     console.log(`  commits ${c.commits}  pushes ${c.pushes}  tests ${c.testsPassed}✓/${c.testsFailed}✗`);
