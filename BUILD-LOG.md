@@ -19,6 +19,55 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### Big blows throw a volley (2026-07-30)
+
+- **Started as "I'm not seeing an attack animation for wizard", which was three
+  compounding causes and not a bug.** The wizard's poses differ from its idle in
+  *two cells* — the staff tip (`·★°` → `◇◆◇` → `↯`) and one arm row (`───┃` →
+  `━━━┫`); all five body rows are identical across idle, `charge` and `blast`.
+  The other three classes change silhouette (the ranger's bow reshapes, the
+  knight's blade sweeps three columns), so the wizard was always the weakest read
+  of the four. On top of that, the blow is 6 frames × 250ms against a 1s
+  statusline poll, and frames 0 and 5 are `pose: null` — so roughly a third of
+  the glimpses you get show plain idle art. And below 76 cols the HUD is compact,
+  which has *no* class pose art at all: "the recoil is all it takes from a class
+  attack", as the renderer puts it
+- **The timing fix was tried first and the tests refused it, correctly.**
+  `sprites.test.js` requires every script to open and close at rest — `pose:
+  null`, `back: 0`, `fly: null` — because a hit can start while the previous one
+  is still fading and the layout assumes the hero is on its mark between blows.
+  Dropping the trailing idle frame would have taken 4-of-6 posed frames to 5, and
+  broken that invariant to do it
+- **So the fix went to the gap instead of the sprite.** A commit or a push
+  against a boss now throws three marks rather than one: `★━━★━━★` for the
+  wizard, `≫==≫==≫`, `╫──╫──╫`, `➳--➳--➳` for the others. This is a strictly
+  better answer to the original complaint than the timing tweak — it lights up
+  most of the gap rather than changing two cells of sprite, it survives the 1fps
+  sampling because the marks are on screen for four of six frames, and it works
+  in **compact**, where pose art does not exist and the volley is now the whole
+  of the tell
+- **`opts.big` already existed and was doing almost nothing.** Only two things
+  set it — `DMG.commit` (3.0×) and `DMG.pushVsBoss` (5.0×) — and its entire
+  consequence was `crit: crit || !!opts.big`, i.e. it borrowed the crit colour
+  for its damage number. `big` now rides alongside `crit` instead of inside it;
+  they always differed in meaning (a crit is a roll, a commit is a kind of blow)
+  and folding them was harmless only while the colour was the only stake
+- **The bug worth catching was in `enqueue`, not in the drawing.** Rapid hits
+  coalesce into whichever anim is already playing, and the merge copied `dmg` and
+  `crit` and nothing else — so a commit landing 200ms after a jab summed its
+  damage into the jab and was drawn as one: single mark, biggest hit in the game
+  rendering as the smallest. `big` is now OR-ed on merge, with a test that folds
+  a real commit into a real jab through `dealDamage`
+- Marks emerge one at a time as the leader clears the hero (`volleyCols` drops
+  any that would sit at a negative column), so a volley grows out of the staff
+  rather than appearing whole — and can never be asked to start behind the hero,
+  which is the one position `flightCol` cannot express
+- Three marks and not two (reads as one shot that stuttered) or four (the gap is
+  ~14 cells and the hindmost has to still be on screen when the leader lands).
+  Count deliberately does not scale with damage
+- New `volley` demo scene, side by side with `hit`: same save, same pose, same
+  frame, `big` the only difference. 3 new tests (404 total, all passing)
+
 ### Upgrades stop hiding what they buy (2026-07-30)
 
 - **Went to fix "the Grove is the game's weakest hour" and found the backlog's

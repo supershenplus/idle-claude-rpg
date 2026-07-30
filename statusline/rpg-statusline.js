@@ -327,9 +327,22 @@ function main(stdin) {
       // projectile itself and leave a trail pointing at nothing.
       const span = Math.max(0, cells - R.width(heroArt.proj));
       const head = Math.round(atk.fly * span);
-      const tail = Math.min(3, head);
-      flightCol = head - tail;
-      flight = R.fit(heroArt.trail.repeat(tail) + heroArt.proj, cells - flightCol);
+      if (d.big) {
+        // A commit or a push against a boss throws a volley. Drawn as a run of
+        // cells from the hindmost mark to the head, trail everywhere the marks
+        // themselves are not — which is the same picture as the single shot when
+        // only one mark has cleared the hero, so the volley grows out of the
+        // ordinary one rather than replacing it with something unrelated.
+        const cols = sprites.volleyCols(head, sprites.VOLLEY);
+        flightCol = cols[0];
+        const row = new Array(head - flightCol + 1).fill(heroArt.trail);
+        for (const c of cols) row[c - flightCol] = heroArt.proj;
+        flight = R.fit(row.join(''), cells - flightCol);
+      } else {
+        const tail = Math.min(3, head);
+        flightCol = head - tail;
+        flight = R.fit(heroArt.trail.repeat(tail) + heroArt.proj, cells - flightCol);
+      }
     }
     const landed = frame >= hitLandsOn;
     const dmg = landed

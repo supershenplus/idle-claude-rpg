@@ -1018,3 +1018,63 @@ test('a repeat clear counts itself, and a first one does not', () => {
   // ×1 on a boss you have beaten once reads as a tally with nothing to tally.
   assert.doesNotMatch(banner(1), /×/);
 });
+
+// ---- the volley ----
+//
+// Only a commit and a push against a boss set `big`, and until the volley landed
+// the whole of their weight was the colour of the damage number — which they had
+// to borrow from `crit` to get, so the two biggest blows in the game drew exactly
+// the same mark as a jab.
+test('a big blow throws a volley, an ordinary one throws a single mark', () => {
+  const at = cls => sprites.hitFrame(cls) * sprites.FRAME_MS;
+  const shot = (cls, big) => renderAnim(100, (st, now) => {
+    st.anim = [{ type: 'hit', at: now - at(cls), dur: 1500, data: { dmg: 90, crit: false, big } }];
+  }, 'big', cls);
+
+  for (const cls of ['wizard', 'knight', 'rogue', 'ranger']) {
+    const { proj, trail } = sprites.heroes[cls];
+    const one = shot(cls, false);
+    const many = shot(cls, true);
+    const count = out => out.split(proj).length - 1;
+
+    assert.strictEqual(count(one), 1, `${cls}: an ordinary hit drew ${count(one)} marks`);
+    assert.strictEqual(count(many), sprites.VOLLEY,
+      `${cls}: a big hit drew ${count(many)} marks, want ${sprites.VOLLEY}`);
+    // Strung on the class's own trail, so it reads as one weapon fired three
+    // times rather than as three unrelated things crossing the gap together.
+    assert.ok(many.includes(proj + trail.repeat(sprites.VOLLEY_GAP - 1) + proj),
+      `${cls}: the volley is not spaced on its own trail`);
+  }
+});
+
+// The marks arrive one at a time. A volley drawn whole from frame one would come
+// out of a staff that has not finished emptying — and worse, would have to start
+// off-screen behind the hero to fit, which is the one thing `flightCol` cannot
+// express.
+test('a volley grows out of the gap instead of appearing whole', () => {
+  const seen = [0, 0.5, 1].map(fly => {
+    const head = Math.round(fly * 14);
+    return sprites.volleyCols(head, sprites.VOLLEY).length;
+  });
+  assert.deepStrictEqual(seen, [1, 3, 3], 'the volley did not build up as the head advanced');
+  // Never behind the hero, at any head position a script can ask for.
+  for (let head = 0; head <= 40; head++) {
+    for (const c of sprites.volleyCols(head, sprites.VOLLEY)) {
+      assert.ok(c >= 0 && c <= head, `mark at ${c} for a head at ${head}`);
+    }
+  }
+});
+
+// A volley is a property of the blow, not of the frame it lands on. `enqueue`
+// sums rapid hits into whichever anim is already playing, so a commit arriving
+// 200ms after a jab used to be drawn as the jab: damage summed, mark stayed
+// single, and the biggest hit in the game rendered as the smallest one.
+test('a big blow folded into a hit already playing keeps its volley', () => {
+  const st = E.newState('wizard', 'Fixture', 1);
+  st.monster.hp = st.monster.maxHp = 1e9;
+  E.dealDamage(st, 1, {}, () => 0.99, 1000);                 // an ordinary jab
+  E.dealDamage(st, B.DMG.commit, { big: true }, () => 0.99, 1200);  // a commit, mid-anim
+
+  assert.strictEqual(st.anim.filter(a => a.type === 'hit').length, 1, 'the two blows did not coalesce');
+  assert.ok(st.anim[0].data.big, 'the commit lost its volley on the way into the jab');
+});

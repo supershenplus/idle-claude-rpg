@@ -93,6 +93,20 @@ const SCENES = {
       return st;
     },
   },
+  // The same wizard blow, but off a commit. `big` is the only difference in the
+  // save — the pose, the recoil and the frame are identical — so this scene is
+  // side by side with `hit` on purpose: what a volley changes is exactly the
+  // mark in the gap and nothing else.
+  volley: {
+    blurb: 'a commit lands — the big blow throws three stars, not one',
+    build: now => {
+      const st = hero(now, { cls: 'wizard', name: 'Eva', level: 31, zone: 'embers', gold: 12480, hpFrac: 0.86 });
+      st.monster = monster('embers', 'ashwraith', 31, 0.39);
+      st.anim = [anim('hit', 1500, { dmg: 114, crit: true, big: true, counter: 7 }, now)];
+      st.ticker = [R.c('brightYellow', '+114 commit!'), R.c('dim', 'Ash Wraith — 114')];
+      return st;
+    },
+  },
   // A recoil is the only thing in the HUD that moves a sprite rather than a
   // mark, and it is on screen for a few hundred ms of a 1500ms hit — so "run it
   // and wait" almost never catches one.

@@ -47,6 +47,16 @@ the ranger looses and recoils. Whatever leaves the sprite is what crosses the
 gap. Take a counter-swing and the hero washes red; slip one and it ghosts and
 leans out of the blow, head furthest, feet planted.
 
+**Big blows throw a volley.** A commit, or a push against a boss, sends three
+marks across the gap instead of one — `★━━★━━★` for the wizard, `➳--➳--➳` for the
+ranger — strung on the class's own trail, so it reads as one weapon fired three
+times rather than three unrelated things arriving together. They leave one at a
+time as the leader clears the hero, so the volley grows out of the gap instead of
+appearing whole. Those two are the hardest hits in the game (3.0× and 5.0× ATK)
+and until now their entire weight was the colour of the damage number, which they
+had to borrow from `crit` to get. The count doesn't scale with damage: the volley
+says *this was one of the big ones*, and the number beside it says how big.
+
 The monster gets a swing back. A failing test or a failing command is drawn as a
 lunge — wind up, come forward, mark crossing the gap right-to-left, `♥-46` for
 what it cost — instead of HP quietly leaving the bar, which is what it used to
