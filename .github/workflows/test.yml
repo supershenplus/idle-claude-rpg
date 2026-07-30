@@ -1,0 +1,57 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same branch makes the in-flight run irrelevant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor the README promises, the LTS line, and current.
+        os: [ubuntu-latest]
+        node: ['18', '20', '22', '24']
+        # The hook and statusline actually live on macOS, and the state tests
+        # lean on atomic rename + locking, which is filesystem-dependent.
+        include:
+          - os: macos-latest
+            node: '22'
+
+    name: node ${{ matrix.node }} / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      # No install step on purpose: this project has no dependencies, and
+      # keeping it that way is the point (docs/PLAN.md house style).
+      - name: Assert the dependency-free invariant
+        shell: bash
+        run: |
+          if [ -e package.json ] || [ -e node_modules ]; then
+            echo "::error::package.json/node_modules appeared — this project is intentionally dependency-free"
+            exit 1
+          fi
+
+      # Unquoted on purpose. Quoting it hands the literal glob to node, whose
+      # own --test globbing only exists on newer majors; letting the shell
+      # expand it works on every version and still skips test/sim.js, which is
+      # a simulation script rather than a test.
+      - name: Unit tests
+        run: node --test test/*.test.js
+
+      - name: Balance gates
+        run: node test/sim.js --assert
