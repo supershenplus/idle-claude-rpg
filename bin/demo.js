@@ -320,11 +320,18 @@ function render(state, { cols, mode, home }) {
   const now = Date.now();
   state.updatedAt = state.lastEventAt = state.lastTickAt = now;
   // Re-anchor every anim to *this* render, since building the scenes takes
-  // long enough that a frame can expire between build and draw.
+  // long enough that a frame can expire between build and draw. That closed the
+  // gap up to the spawn and no further — starting node costs another ~90ms of
+  // the 250ms frame, so on a busy machine a scene could still be drawn a frame
+  // past FRAME. Handing the child the same clock makes the offset exact, which
+  // matters here because the whole point of FRAME is showing a specific one.
   for (const a of state.anim) a.at = now - AGO;
   fs.writeFileSync(path.join(home, 'state.json'), JSON.stringify(state));
   return execFileSync('node', [LINE_JS], {
-    env: { ...process.env, IDLE_RPG_HOME: home, COLUMNS: String(cols), RPG_HUD: mode },
+    env: {
+      ...process.env, IDLE_RPG_HOME: home, COLUMNS: String(cols),
+      RPG_HUD: mode, RPG_NOW: String(now),
+    },
     input: '{}', encoding: 'utf8',
   }).replace(/\n$/, '');
 }

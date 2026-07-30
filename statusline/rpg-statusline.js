@@ -14,6 +14,9 @@
 // The monster sits on the terminal's midpoint and the hero is placed a fixed
 // gap to its left, so the pair reads as a centred scene rather than two
 // combatants shouting at each other from opposite edges.
+//
+// $RPG_NOW pins the clock the scene is drawn against — the seam that lets a
+// caller ask for one exact animation frame across a process boundary. See main.
 
 const fs = require('fs');
 
@@ -21,7 +24,19 @@ const HERO_GAP = 14;   // cells between hero art and monster art
 const LEFT_MIN = 2;
 
 function main(stdin) {
-  const now = Date.now();
+  // Which frame of an animation gets drawn is `(now - anim.at) / FRAME_MS`, so
+  // a caller that wants a *named* frame has to name the clock too: this process
+  // takes about 90ms to start, which is over a third of a 250ms frame, and the
+  // anim was timestamped before the spawn. Under load that gap crosses a frame
+  // boundary and the scene drawn is not the one asked for. $RPG_NOW pins the
+  // clock so the answer stops depending on how busy the machine is.
+  //
+  // Deliberately not used for the fold below, which keeps the real clock: the
+  // fold turns elapsed time into kills and writes them, so the worst a bogus
+  // $RPG_NOW can do is mis-draw one frame — it can never bank a wrong absence.
+  const realNow = Date.now();
+  const pinnedNow = Number(process.env.RPG_NOW);
+  const now = Number.isFinite(pinnedNow) && pinnedNow > 0 ? Math.floor(pinnedNow) : realNow;
   const cols = parseInt(process.env.COLUMNS, 10) || 80;
 
   const P = require('../lib/paths');
@@ -41,7 +56,7 @@ function main(stdin) {
     cwd = (j.workspace && (j.workspace.current_dir || j.workspace.project_dir)) || j.cwd || cwd;
   } catch (_) { /* no payload, or not JSON: our own cwd is a fair guess */ }
 
-  try { S.tryFold(now, { cwd }); } catch (_) { /* render last saved state */ }
+  try { S.tryFold(realNow, { cwd }); } catch (_) { /* render last saved state */ }
 
   const state = S.loadState();
   if (!state) {

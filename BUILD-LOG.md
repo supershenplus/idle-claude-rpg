@@ -19,6 +19,51 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### The animation tests were measuring the machine, not the renderer (2026-07-30)
+
+- **Found by running the suite, not by looking for it.** `node --test
+  'test/*.test.js'` came back red on a clean tree with the ranger's recoil out by
+  `[-3,-3,0,0,-1,-3]` against an expected `[0,0,3,3,2,0]` — every element short by
+  exactly 3. Re-run, it passed. Re-run eight times serially, it passed eight
+  times. A uniform offset is not noise: 3 is the `back` of the frame the script
+  is deepest at, so the *home* column had been sampled at the wrong frame, and
+  the whole ruler moved with it
+- **The cause is a clock the test does not own.** These tests draw a frame by
+  timestamping an anim `now - frame * FRAME_MS` and spawning the statusline,
+  which then asks `Date.now()` itself. Two clocks, one gap: everything between
+  `saveState` and the child's first line runs in it. Measured on an idle machine
+  that gap is 67–95ms of a 250ms frame — a third of the budget spent before the
+  child does anything, and nothing fails while it stays under one frame. It stops
+  staying under one frame when the suite runs in parallel, which is how it is
+  meant to be run
+- **What the load actually has to be, because the first two guesses were wrong.**
+  Saturating all 10 cores changed the drift by nothing (p50 78ms) and neither did
+  8 concurrent `node` spawns on an idle box (p50 68ms). It is the *combination* —
+  40 spinners with 12 processes spawning alongside them takes the drift to p50
+  473ms and puts 39 of 40 samples past a frame. Which is a fair description of
+  `node --test` over 17 files, each spawning children of its own. Worth writing
+  down because the two obvious reproductions both come back green and read as
+  evidence the bug isn't there
+- **The fix is to stop having two clocks.** `$RPG_NOW` pins the one the scene is
+  drawn against, so "draw frame 3" means it however busy the machine is. It is
+  read exactly as suspiciously as the saved `hud` pin — anything not a finite
+  positive number falls back to the real clock rather than to `NaN`, which would
+  match no animation and quietly draw a hero standing still
+- **It reaches the picture and stops there.** The fold keeps `Date.now()`
+  regardless, because the fold turns elapsed time into kills and *writes them*.
+  Pinning both would have made a test seam into a way to bank an absence that
+  never happened — six hours of it, in the test that now pins the boundary
+- **The before/after is a deterministic 300ms, not a load test.** Injecting one
+  sleep into the child ahead of the clock read reproduces it exactly: pre-fix 32
+  failures, post-fix 0, no load involved. Each of the three behaviours also has a
+  mutation that only its own test catches — ignore the pin, trust it unvalidated,
+  or let it reach the fold — which is what says the four new tests are load
+  bearing rather than merely green
+- **`bin/demo.js` had already met this and half-fixed it.** It re-anchors every
+  anim immediately before spawning, with a comment about frames expiring between
+  build and draw — which closes the gap up to the spawn and not the ~90ms of the
+  spawn itself. It passes `$RPG_NOW` now, so `FRAME = 3` is the frame you get
+
 ### The compact HUD gets the art the big one got a week ago (2026-07-29)
 
 - **The gap this closed.** v1.2 redrew all 33 sprites as 5-row block art and

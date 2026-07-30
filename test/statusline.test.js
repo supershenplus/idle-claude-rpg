@@ -20,6 +20,7 @@ process.env.IDLE_RPG_HOME = HOME;
 const S = require('../lib/state');
 const E = require('../lib/engine');
 const R = require('../lib/render');
+const B = require('../lib/balance');
 const sprites = require('../lib/sprites');
 
 const CLI = path.join(__dirname, '..', 'statusline', 'rpg-statusline.js');
@@ -177,12 +178,24 @@ test('ranger bow limbs bulge symmetrically toward the target', () => {
 // already started. `engine.resolveKill` spawns the replacement immediately, so
 // every frame of the killing blow and the death that follows it would otherwise
 // be drawn against whatever monster happened to be standing there next.
+//
+// Every anim below is timestamped a whole number of frames back from `now`, so
+// the frame the child draws is only the frame asked for if the child's clock
+// agrees with `now`. It does not by default: spawning node costs about 90ms of
+// a 250ms frame, and under a parallel `node --test` run that gap can cross a
+// frame boundary — which made the recoil tests fail by exactly one frame's
+// displacement, and only ever on a loaded machine. $RPG_NOW hands the child the
+// same clock, which is what makes "at frame 3" mean it.
 function renderAnim(cols, build, mode, cls) {
-  const st = E.newState(cls || 'ranger', 'Testfixture', Date.now());
-  build(st, Date.now());
+  const now = Date.now();
+  const st = E.newState(cls || 'ranger', 'Testfixture', now);
+  build(st, now);
   S.saveState(st);
   return execFileSync('node', [CLI], {
-    env: { ...process.env, COLUMNS: String(cols), IDLE_RPG_HOME: HOME, RPG_HUD: mode || '' },
+    env: {
+      ...process.env, COLUMNS: String(cols), IDLE_RPG_HOME: HOME,
+      RPG_HUD: mode || '', RPG_NOW: String(now),
+    },
     input: '{}', encoding: 'utf8',
   });
 }
@@ -862,4 +875,125 @@ test('auto is the absence of a pin, not a third layout', () => {
   // Below the width mini used to serve, compact is now the floor rather than a
   // handoff to a third layout.
   assert.strictEqual(renderPinned(30, undefined), HUD_LINES.compact);
+});
+
+// ---- $RPG_NOW: the clock the scene is drawn against ----
+// The HUD is rendered by a process the caller has to spawn, so "draw frame 3"
+// only means something if both sides agree what time it is. They do not by
+// default: the anim is timestamped before the spawn and starting node costs
+// about 90ms of a 250ms frame, which is a third of the budget gone before the
+// child asks the clock anything. Nothing fails while the drift stays under one
+// frame — it just quietly picks a neighbouring frame once a loaded machine
+// pushes it over, which is how the recoil tests above came to fail by exactly
+// one frame's displacement and only when the suite ran in parallel.
+//
+// So the pin is the fix, and these are its two halves: it has to actually
+// decide the frame, and it has to reach no further than the picture.
+
+// Synchronous and idle — a spin loop would compete for the CPU that makes the
+// drift visible in the first place.
+const sleep = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+// Split from the render on purpose. The obvious way to write these is one
+// helper that builds and draws in a breath — but then the anim is re-anchored
+// to `Date.now()` on every call, so it slides forward by exactly as much as the
+// clock does and the drift cancels itself out. That test passes whether or not
+// the pin does anything. Saving against an anchor the caller holds is what
+// keeps the wall clock as the only thing moving between two renders.
+function saveScene(anchor, frame) {
+  const st = E.newState('ranger', 'Testfixture', anchor);
+  st.monster = { ...BOSS };
+  st.anim = [{ type: 'hit', at: anchor - frame * sprites.FRAME_MS, dur: 1500,
+    data: { dmg: 38, crit: false, counter: 0 } }];
+  S.saveState(st);
+}
+
+function drawAt(pin) {
+  return execFileSync('node', [CLI], {
+    env: {
+      ...process.env, COLUMNS: '100', IDLE_RPG_HOME: HOME, RPG_HUD: 'big',
+      RPG_NOW: pin == null ? '' : String(pin),
+    },
+    // Pointed away from this repo: the fold also polls the working directory
+    // for pushes, and a push landing mid-test would rewrite the scene.
+    input: JSON.stringify({ cwd: HOME }), encoding: 'utf8',
+  });
+}
+
+test('a pinned clock draws the same frame however late the render happens', () => {
+  const anchor = Date.now();
+  saveScene(anchor, 0);
+  const first = drawAt(anchor);
+  // Longer than a frame, so an unpinned render is guaranteed to have moved on:
+  // this is the exact drift that used to be a coin toss under load.
+  sleep(sprites.FRAME_MS + 100);
+  // Re-saved against the *same* anchor, so the file the child reads is byte for
+  // byte what it read the first time and the clock is the only thing that moved.
+  saveScene(anchor, 0);
+  assert.strictEqual(drawAt(anchor), first,
+    'the scene moved between two renders of one state — the clock is not pinned');
+});
+
+test('the pinned clock is what picks the frame, not the wall clock', () => {
+  // One state, two clocks. Frame 0 is the wind-up and has thrown nothing; by the
+  // frame the blow lands the damage number is in the gap. Reading the same state
+  // twice and getting both is the pin doing the only job it has.
+  const anchor = Date.now();
+  saveScene(anchor, 0);
+  const early = drawAt(anchor);
+  saveScene(anchor, 0);
+  const late = drawAt(anchor + sprites.hitFrame('ranger') * sprites.FRAME_MS);
+  assert.doesNotMatch(R.visible(early), /✦-38/, 'the blow landed before it was thrown');
+  assert.match(R.visible(late), /✦-38/, 'winding the clock forward did not advance the frame');
+});
+
+test('a nonsense pin falls back to the real clock instead of breaking the HUD', () => {
+  // It is read from the environment, so it is exactly as trustworthy as the
+  // saved `hud` pin two sections up — and gets the same treatment. A HUD that
+  // renders nothing is the one failure this file exists to prevent.
+  //
+  // Line count alone would not catch much: a `now` of NaN or 0 still draws a
+  // full scene, it just matches no animation, and the hero stands there as if
+  // nothing were happening. So the damage number is the real assertion — it is
+  // on screen only if the clock found the live anim, which only a real one does.
+  // The blow is anchored a frame past impact and runs 1500ms, so it stays landed
+  // and unexpired across a spawn either way.
+  const landed = sprites.hitFrame('ranger') + 1;
+  for (const junk of ['banana', '', '-5', '0', 'NaN', 'Infinity', '1e999']) {
+    saveScene(Date.now(), landed);
+    const out = R.visible(drawAt(junk));
+    assert.strictEqual(out.trim().split('\n').length, HUD_LINES.big,
+      `pin ${JSON.stringify(junk)} did not fall back to a full scene`);
+    assert.match(out, /Testfixture/, `pin ${JSON.stringify(junk)} lost the hero`);
+    assert.match(out, /✦-38/, `pin ${JSON.stringify(junk)} left the clock somewhere the anim isn't`);
+  }
+});
+
+test('the pinned clock moves the picture and not the save', () => {
+  // The fold turns elapsed time into kills and writes them down, so it keeps the
+  // real clock however the render is pinned. Otherwise the seam that exists to
+  // make a test deterministic would also be a way to bank an absence that never
+  // happened — six hours of it, here, on top of the two that really elapsed.
+  const real = Date.now();
+  const away = 2 * 3600000;
+  const st = E.newState('ranger', 'Testfixture', real - away);
+  st.lastTickAt = st.lastEventAt = st.updatedAt = real - away;
+  S.saveState(st);
+  execFileSync('node', [CLI], {
+    env: {
+      ...process.env, COLUMNS: '100', IDLE_RPG_HOME: HOME, RPG_HUD: 'big',
+      RPG_NOW: String(real + 6 * 3600000),
+    },
+    // Pointed away from this repo on purpose: the fold also polls the working
+    // directory for pushes, and the kill count below is only exact if nothing
+    // but the away window is paying into it.
+    input: JSON.stringify({ cwd: HOME }), encoding: 'utf8',
+  });
+
+  const after = S.loadState();
+  const hours = away / 3600000;
+  assert.strictEqual(after.counters.kills, Math.floor(hours * B.OFFLINE_KILLS_PER_HOUR),
+    'the fold paid out against the pinned clock rather than the real elapsed time');
+  assert.ok(Math.abs(after.updatedAt - real) < 60000,
+    `the save was stamped with the pinned clock (${after.updatedAt - real}ms off)`);
 });
