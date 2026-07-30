@@ -19,6 +19,51 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### The game had no ending, and nobody had noticed (2026-07-30)
+
+- **Found by asking what happens after the last boss, not by playing to it.**
+  `resolveKill` looks up `C.nextZone(zoneId)` to decide what a boss unlocks. In
+  Production that returns `null`, so the unlock branch was skipped and control
+  fell to the `else` — the generic `bossdown` banner, byte-identical to the fifth
+  time you kill Rootfang in the Grove. Two months of play ended in a frame
+  indistinguishable from an ordinary Tuesday. It was never a bug report because
+  no save has reached level 60; the repo is four days old and the cap is ~45 days
+- **The fix is a branch, not a system.** `!nz` on a boss kill means *this was the
+  last one*, which is a position in the zone list rather than a hardcoded `prod`
+  — an eighth zone moves the ending with it for free. First kill gets a `cleared`
+  anim; every kill after gets the ordinary banner with a count on it, because the
+  boss still respawns every 15 kills and farming it is fine, it just is not an
+  ending twice
+- **`clearedAt` exists because the counter cannot answer the question.** A save
+  sitting at `finalBossKills: 4` has no record of when 1 happened, so the date is
+  stored at the moment it is true and never rewritten. That is also what lets
+  `/hero status` and `/hero stats` carry a permanent `✦ CLEARED <date>` line —
+  an ending you can only see for nine seconds is not much of a trophy
+- **The trophy needed an exemption, and finding that out was the useful part.**
+  Production already had a named legendary defined — `The Postmortem` — and
+  `makeItem` already names legendaries after the zone they drop in, so a
+  `floorLegendary` on the drop was enough to hand it over. Except the drop filter
+  judges every item at the door and vendors anything that cannot beat what is
+  worn, which at level 60 with a +10 set on is *most things*. The ending would
+  have sold the player their own trophy for gold, seconds after the credits, and
+  told them so in the ticker. So `keep` bypasses `worthKeeping` — the one
+  exemption, and for trophies rather than for convenience: an item you are given
+  for finishing something is not a candidate upgrade, so it is not judged as one
+- **A detail worth writing down because it nearly went the other way:**
+  `finalBossDown` is called, not returned. The first draft was
+  `if (!nz) return finalBossDown(...)`, which reads fine and is wrong —
+  `resolveKill` ends with `addXp` and `spawnMonster`, so an early return would
+  have paid no xp for the last kill and left the field empty afterwards. Caught
+  by reading the tail of the function rather than by a test, and then pinned by
+  one
+- **Banner ordering is reversed on purpose.** Ordinary bosses queue the loot
+  flourish first and the DEFEATED banner after it. The ending queues the banner
+  first, so the Postmortem lands *under* the credits as the closing beat rather
+  than as a preamble to them
+- **Cost:** ~45 lines in `lib/engine.js`, two `rollLoot` options, a banner case
+  and a `dead` clause in the statusline, a `clearedLine` in the CLI, a `cleared`
+  demo scene, and 11 tests. 376 pass
+
 ### The sitting: what this afternoon actually bought you (2026-07-30)
 
 - **The backlog item was one line — "per-session stats view" — and the whole

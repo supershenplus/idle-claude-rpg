@@ -231,6 +231,21 @@ function insightBuy(st, id, all) {
   console.log(`${id} ${from} → ${pts} for ${spend} Insight (+${gain}% ${t.of}). ${st.hero.insight} left.`);
 }
 
+// The permanent record of finishing the game, for `status` and `stats`.
+//
+// An ISO date rather than a locale one: it is written into a save that outlives
+// the terminal it was printed in, and a test that pins it should not depend on
+// which machine ran it.
+function clearedLine(st) {
+  const n = st.counters.finalBossKills || 0;
+  const on = new Date(st.hero.clearedAt).toISOString().slice(0, 10);
+  return R.c('brightYellow', `✦ CLEARED ${on}`)
+    // The last zone, not a hardcoded 'prod' — the engine calls a boss final
+    // when `nextZone` returns null, so "the end" is a position in the list and
+    // adding an eighth zone should move both together.
+    + (n > 1 ? R.c('dim', ` — ${C.zones[C.zones.length - 1].boss.name} down ×${n}`) : '');
+}
+
 // ---------- the sitting, for `/hero stats` ----------
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many || one + 's'}`;
@@ -336,6 +351,7 @@ const commands = {
     console.log(`  XP    ${h.level >= B.LEVEL_CAP ? insightLine(h) : `${h.xp}/${xpNeed} [${R.bar(h.xp, xpNeed, 20)}]`}`);
     console.log(`  HP    ${h.hp}/${h.maxHp}   ATK ${Math.round(E.heroAtk(st))}   DEF ${E.heroDef(st)}   Gold ${R.fmtGold(h.gold)}`);
     console.log(`  Zone  ${zone.name} (${zone.min}-${zone.max})`);
+    if (h.clearedAt) console.log(`  ${clearedLine(st)}`);
 
     // Same battle scene as the statusline, minus the animation frames.
     const heroBig = sprites.bigHero(h.class);
@@ -688,6 +704,7 @@ const commands = {
     sittingBlock(st, now);
     const days = Math.max(1, Math.round((now - st.createdAt) / 86400000));
     console.log(`\n  Lifetime (${days} days):`);
+    if (st.hero.clearedAt) console.log(`  ${clearedLine(st)}`);
     console.log(`  kills ${c.kills} (${c.bossKills} bosses)  deaths ${c.deaths}`);
     console.log(`  commits ${c.commits}  pushes ${c.pushes}  tests ${c.testsPassed}✓/${c.testsFailed}✗`);
     console.log(`  lines of code ${c.linesWritten.toLocaleString('en-US')}  gold earned ${R.fmtGold(c.goldEarned)}`);

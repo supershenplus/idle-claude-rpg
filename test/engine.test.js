@@ -1364,3 +1364,123 @@ test('a save from before sittings existed grows one on its next fold', () => {
   E.fold(s, [], T0 + 61_000);
   assert.ok(E.sessionStats(s, T0 + 61_000), 'the fold left the old save without a sitting');
 });
+
+// ---------- the end of the game ----------
+//
+// Until `finalBossDown` existed, killing The Root Cause drew the same banner as
+// the fifth Rootfang: `nextZone('prod')` is null, so the unlock line was skipped
+// and the generic `bossdown` played. These pin the difference.
+
+// A hero standing in the last zone with its boss up and one hit left in it.
+function atTheEnd(mutate) {
+  const s = fresh();
+  const last = C.zones[C.zones.length - 1];
+  s.hero.level = B.LEVEL_CAP;
+  s.hero.zone = last.id;
+  s.hero.unlockedZones = C.zones.map(z => z.id);
+  E.refreshMaxHp(s);
+  s.counters.killsSinceBoss = B.BOSS_KILLS_REQUIRED;
+  E.spawnMonster(s, () => 0.5);
+  assert.ok(s.monster.isBoss, 'the last zone did not put its boss up');
+  assert.strictEqual(C.nextZone(s.hero.zone), null, 'this is not the last zone');
+  if (mutate) mutate(s);
+  return { s, last };
+}
+
+test('beating the last boss is an ending, not another bossdown', () => {
+  const { s, last } = atTheEnd();
+  const boss = s.monster;
+  E.resolveKill(s, {}, () => 0.5, T0 + 1000);
+
+  assert.strictEqual(s.counters.finalBossKills, 1);
+  assert.strictEqual(s.hero.clearedAt, T0 + 1000, 'the clear was not dated');
+
+  const banner = s.anim.find(a => a.type === 'cleared');
+  assert.ok(banner, 'the end of the game drew no banner of its own');
+  assert.strictEqual(banner.data.name, boss.name);
+  assert.strictEqual(banner.data.clears, 1);
+  assert.ok(!s.anim.some(a => a.type === 'bossdown'),
+    'the ending drew the ordinary boss banner as well');
+  assert.ok(banner.data.mon && banner.data.mon.hp === 0,
+    'the banner carries no corpse, so the scene would flip to a live monster under it');
+
+  // …and the trophy is the zone's named legendary, not whatever the table rolled.
+  const trophy = s.inventory.find(i => i.name === last.legendary);
+  assert.ok(trophy, `no ${last.legendary} in the bag after the clear`);
+  assert.strictEqual(trophy.rarity, 'legendary');
+});
+
+test('the trophy survives a hero already wearing better', () => {
+  // At level 60 with a +10 set on, the drop filter would vendor the Postmortem
+  // at the door. Selling someone their own trophy under the credits is the one
+  // frame this branch exists to prevent.
+  const { s, last } = atTheEnd(st => {
+    for (const k of C.EQUIP_KEYS) {
+      st.equipment[k] = { id: 'god-' + k, slot: C.keySlot(k), name: 'Godly ' + k,
+        rarity: 'legendary', ilvl: 999, atk: 9999, def: 9999, hp: 9999, plus: 10 };
+    }
+    E.refreshMaxHp(st);
+  });
+  E.resolveKill(s, {}, () => 0.5, T0 + 1000);
+
+  assert.ok(s.inventory.some(i => i.name === last.legendary),
+    'the drop filter vendored the trophy');
+  assert.ok(!/vendored/.test((s.ticker || []).join(' ')), 'the trophy was sold on the spot');
+});
+
+test('a second clear is a victory lap, not a second ending', () => {
+  const { s } = atTheEnd();
+  E.resolveKill(s, {}, () => 0.5, T0 + 1000);
+  const clearedAt = s.hero.clearedAt;
+
+  s.counters.killsSinceBoss = B.BOSS_KILLS_REQUIRED;
+  E.spawnMonster(s, () => 0.5);
+  assert.ok(s.monster.isBoss, 'the last boss did not come back to be farmed');
+  s.anim = [];
+  E.resolveKill(s, {}, () => 0.5, T0 + 2000);
+
+  assert.strictEqual(s.counters.finalBossKills, 2);
+  assert.strictEqual(s.hero.clearedAt, clearedAt, 'the second clear re-dated the first');
+  assert.ok(!s.anim.some(a => a.type === 'cleared'), 'the ending played twice');
+  const down = s.anim.find(a => a.type === 'bossdown');
+  assert.ok(down, 'a repeat clear drew no banner at all');
+  assert.strictEqual(down.data.clears, 2);
+});
+
+test('the ending does not skip the xp, the gold or the next monster', () => {
+  // finalBossDown returns into resolveKill rather than out of it — an early
+  // return here would have silently dropped the kill's xp and left no monster up.
+  const { s } = atTheEnd();
+  const xp = s.counters.xpEarned, gold = s.hero.gold, kills = s.counters.kills;
+  E.resolveKill(s, {}, () => 0.5, T0 + 1000);
+
+  assert.ok(s.counters.xpEarned > xp, 'the last kill paid no xp');
+  assert.ok(s.hero.gold > gold, 'the last kill paid no gold');
+  assert.strictEqual(s.counters.kills, kills + 1);
+  assert.strictEqual(s.counters.bossKills, 1);
+  assert.ok(s.monster && s.monster.hp > 0, 'nothing spawned after the final boss');
+});
+
+test('an ordinary boss still unlocks the next zone, unchanged', () => {
+  const s = fresh();
+  s.hero.level = 9;
+  E.refreshMaxHp(s);
+  s.counters.killsSinceBoss = B.BOSS_KILLS_REQUIRED;
+  E.spawnMonster(s, () => 0.5);
+  E.resolveKill(s, {}, () => 0.5, T0 + 1000);
+
+  const down = s.anim.find(a => a.type === 'bossdown');
+  assert.ok(down && down.data.unlocked, 'the unlock line went missing');
+  assert.ok(s.hero.unlockedZones.includes(C.nextZone('grove').id));
+  assert.strictEqual(s.hero.clearedAt, undefined, 'an ordinary boss ended the game');
+  assert.strictEqual(s.counters.finalBossKills, undefined);
+});
+
+test('floorLegendary outranks the floors below it', () => {
+  const s = fresh();
+  const zone = C.zoneById(s.hero.zone);
+  // rand() at 0 picks the first rarity in the table; the floor has to lift it.
+  const item = E.rollLoot(s, 5, { guaranteed: true, floorLegendary: true, floorRare: true }, () => 0, T0);
+  assert.strictEqual(item.rarity, 'legendary');
+  assert.strictEqual(item.name, zone.legendary);
+});

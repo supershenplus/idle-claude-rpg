@@ -505,3 +505,21 @@ test('span keeps the minutes relTime deliberately throws away', () => {
   assert.strictEqual(R.span(25 * 3600_000), '1d 1h');
   assert.strictEqual(R.span(-5), '0s', 'a clock that stepped back reported a negative span');
 });
+
+test('a cleared save says so in status and in stats, permanently', () => {
+  const cleared = Date.UTC(2026, 8, 14, 12, 0, 0);
+  seed(st => { st.hero.clearedAt = cleared; st.counters.finalBossKills = 1; });
+  assert.match(run('status'), /✦ CLEARED 2026-09-14/);
+  assert.match(run('stats'), /✦ CLEARED 2026-09-14/);
+
+  // The count only appears once there is something to count.
+  assert.doesNotMatch(run('status'), /down ×/);
+  seed(st => { st.hero.clearedAt = cleared; st.counters.finalBossKills = 4; });
+  assert.match(run('status'), /✦ CLEARED 2026-09-14 — The Root Cause down ×4/);
+});
+
+test('a hero who has not finished is not told they have', () => {
+  seed();
+  assert.doesNotMatch(run('status'), /CLEARED/);
+  assert.doesNotMatch(run('stats'), /CLEARED/);
+});

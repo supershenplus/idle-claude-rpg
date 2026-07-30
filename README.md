@@ -203,6 +203,21 @@ have a way back.
 `/hero insight <track> max` previews the spend and needs `--confirm`, because
 Insight is the one currency you cannot farm back in an afternoon.
 
+### The ending
+
+The last boss is **The Root Cause** (level 60, Production). Killing it the first
+time is the one moment the game treats as an ending: its own flashing banner
+(`YOU HAVE SHIPPED`), and **The Postmortem** — Production's named legendary —
+handed over guaranteed. The trophy skips the drop filter, so a hero already
+wearing better in that slot is not sold their own trophy under the credits.
+
+`hero.clearedAt` dates it, and `/hero status` and `/hero stats` carry a
+`✦ CLEARED <date>` line from then on. The Root Cause keeps coming back every 15
+kills afterwards — repeat clears count up (`DEFEATED ×4`) rather than replaying
+the ending. There is no prestige reset; see the note above for why.
+
+`node bin/demo.js cleared` draws the frame without the two months.
+
 ## Install
 
 Node ≥ 18, no npm install, no network calls.

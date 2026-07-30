@@ -997,3 +997,24 @@ test('the pinned clock moves the picture and not the save', () => {
   assert.ok(Math.abs(after.updatedAt - real) < 60000,
     `the save was stamped with the pinned clock (${after.updatedAt - real}ms off)`);
 });
+
+test('the ending gets its own banner, and keeps the corpse under it', () => {
+  const out = renderAnim(100, (st, now) => {
+    st.monster = { id: 'sprite', name: 'Grove Sprite', sprite: '(s)', level: 3, isBoss: false, hp: 40, maxHp: 40 };
+    st.anim = [{ type: 'cleared', at: now - 1000, dur: 9000, data: { name: 'The Root Cause', clears: 1, mon: CORPSE } }];
+  });
+  assert.match(out, /THE ROOT CAUSE DEFEATED — YOU HAVE SHIPPED/);
+  assert.doesNotMatch(out, /unlocked/, 'the ending promised a zone that does not exist');
+  assert.doesNotMatch(out, /Grove Sprite/, 'the scene flipped to a live monster under the credits');
+  const dead = sprites.DEAD_MONSTER_BIG.map(r => r.trim()).filter(Boolean)[0];
+  assert.ok(out.includes(dead), 'the corpse sprite is drawn, not a live one');
+});
+
+test('a repeat clear counts itself, and a first one does not', () => {
+  const banner = clears => renderAnim(100, (st, now) => {
+    st.anim = [{ type: 'bossdown', at: now - 1000, dur: 6000, data: { name: 'The Root Cause', clears, mon: CORPSE } }];
+  });
+  assert.match(banner(4), /DEFEATED ×4/);
+  // ×1 on a boss you have beaten once reads as a tally with nothing to tally.
+  assert.doesNotMatch(banner(1), /×/);
+});

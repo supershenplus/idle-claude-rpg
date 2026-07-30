@@ -226,6 +226,16 @@ const SCENES = {
       return st;
     },
   },
+  cleared: {
+    blurb: 'the end of the game — the last boss down for the first time',
+    build: now => {
+      const st = hero(now, { cls: 'wizard', name: 'Gavin', level: 60, zone: 'prod', gold: 812400, hpFrac: 0.31 });
+      st.monster = monster('prod', 'rootcause', 60, 0.001);
+      st.anim = [anim('cleared', 9000, { name: 'The Root Cause', clears: 1 }, now)];
+      st.ticker = [R.c('brightYellow', 'The Root Cause FOUND — the Postmortem is yours')];
+      return st;
+    },
+  },
   levelup: {
     blurb: 'the level-up banner',
     build: now => {

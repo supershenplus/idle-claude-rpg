@@ -106,7 +106,7 @@ function main(stdin) {
   const mon = (anim && anim.data && anim.data.mon) || m;
   // The corpse stays on the field for the celebration too: flipping back to a
   // live sprite under a "DEFEATED" banner reads as the wrong monster dying.
-  const dead = !!anim && (anim.type === 'kill' || anim.type === 'bossdown');
+  const dead = !!anim && (anim.type === 'kill' || anim.type === 'bossdown' || anim.type === 'cleared');
 
   const tickerLine = () => {
     const parts = [R.c('dim', zone.name)];
@@ -127,7 +127,17 @@ function main(stdin) {
         return R.c(flash2('brightRed', 'red'), `▓▓▓ ☠ BOSS: ${String(anim.data.name || '').toUpperCase()} ☠ ▓▓▓`);
       case 'bossdown':
         return R.c('brightYellow', `☠ ${anim.data.name} DEFEATED`
-          + (anim.data.unlocked ? ` — ${anim.data.unlocked} unlocked` : '') + ' ☠');
+          + (anim.data.unlocked ? ` — ${anim.data.unlocked} unlocked` : '')
+          // Only past the first: a plain "DEFEATED" is the right frame for a
+          // boss you have beaten once, and `×1` on it would read as a tally
+          // where there is nothing yet to tally.
+          + (anim.data.clears > 1 ? ` ×${anim.data.clears}` : '') + ' ☠');
+      // The one banner in the game that is not about a monster. It flashes like
+      // a boss intro because it is the same register — but it names no unlock,
+      // because there is nothing left to unlock, and that absence is the point.
+      case 'cleared':
+        return R.c(flash2('brightYellow', 'brightGreen'),
+          `✦✦✦ ${String(anim.data.name || '').toUpperCase()} DEFEATED — YOU HAVE SHIPPED ✦✦✦`);
       // The goblin gets a flashing banner like a boss because it is the same
       // kind of moment — something turned up that is not the usual trash — and
       // a 5% spawn nobody notices is just a monster with odd numbers.
