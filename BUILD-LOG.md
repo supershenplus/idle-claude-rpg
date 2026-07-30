@@ -19,6 +19,61 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### Upgrades stop hiding what they buy (2026-07-30)
+
+- **Went to fix "the Grove is the game's weakest hour" and found the backlog's
+  reason for it was wrong.** The standing claim was that a `+` buys +0.22 ATK,
+  three of five offers read *worse than worn*, and there is "genuinely nothing to
+  spend gold on before the second zone". Folding real Grove runs through the
+  engine (throwaway harnesses in the session scratchpad, not committed): the zone
+  is ~25 hours at 300 events/day, the hero earns ~7k gold, the *existing* upgrade
+  sink absorbs ~5.9k of it, and **100% of shelf offers are affordable** by the
+  time they leave. Gold has somewhere to go. The premise was measured and did not
+  survive
+- **What is actually wrong is a disagreement between two curves.** A `+` is 2% of
+  what the item rolled — a percentage of *gear* — and gear is only 46% of a Grove
+  hero's ATK against 67% of a capped one's, because class base and per-level ATK
+  dominate while you are low. So a `+` is worth **1.6%** of hero ATK leaving the
+  Grove and settles at 7–8.7% from Cobalt Caves on, a fifth of steady state in the
+  one zone every player starts in. Measured at each zone exit:
+
+  | zone exit | gear % of ATK | what each `+` is worth |
+  |---|---|---|
+  | Grove → Caves | 46% | 1.6% |
+  | Caves → Archives | 57% | 4.0% |
+  | Embers → Peaks | 66% | 7.0% |
+  | at cap | 67% | 8.7% |
+
+  Meanwhile `upgradeCost` is *linear* in ilvl. Upgrades are priced cheapest in
+  exactly the zone they are worth least — and the shelf, which listed twelve slots
+  by price alone and recommended the `cheapest:`, pointed hardest at the worst one
+- **Fixed the listing, not the numbers.** No balance constant moved. Every path
+  that spends gold on a `+` now reports the gain beside the price: the shelf's
+  per-slot column, the `cheapest:` nudge, and the single `upgrade <slot>`, which
+  previously spent the gold and then printed an absolute ATK with nothing to
+  compare it against. A dead one says `→ nothing`. `upgrade <slot> max` already
+  did this and even said "too small to be worth it yet" — the principle was
+  established in that very function and had never reached the two paths players
+  actually use. Same fix, and same reasoning, as the shop's `worse than worn` tag
+- **The gain is diffed at the item, never at the hero, and a test caught the
+  overreach.** `gearSum` rounds its total, so one `+` on a small item moves the
+  stat sheet by nothing — diffing `heroAtk` reports every early upgrade as buying
+  exactly zero, which is false rather than conservative: the sum keeps every
+  fraction and rounds once, so enough of them cross a whole point. The first draft
+  of the test asserted a single `+` raises `heroAtk` and *failed*, which is the
+  correct answer — it takes five on an i8 weapon. The test now pins both halves:
+  the fraction is reported, and repeated buys do move the rounded stat. Driven
+  through the real engine functions rather than re-deriving "2% of what it
+  rolled", for the reason `previewAutoEquip` gives — a second copy of the rule
+  drifts, and a listing that disagrees with the purchase it recommends is worse
+  than no listing
+- **Also corrected a claim this repo had been making about itself.** Gold poured
+  into gear that a drop later displaces is *not* destroyed: `autoEquip` benches
+  the item into the bag with its `+` intact, and both equip-ranking and inventory
+  eviction rank on `itemValue`, which counts `plus`. Only `sellPrice` ignores it.
+  A measured ~2k of Grove upgrade gold looked lost and isn't
+- 2 new tests in `cli.test.js` (401 total, all passing)
+
 ### The save was not the only hero (2026-07-30)
 
 - **The case, in one sentence: there are four classes and you only ever play

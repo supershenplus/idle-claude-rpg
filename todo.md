@@ -33,11 +33,16 @@ answerable.
       days of regular use and nothing has reached it. Insight's numbers came off
       the sim; prestige's would too, but the sim would be validating a loop no
       human has played
-- [ ] **Prerequisite either way: the Grove is the game's weakest hour** (see the
-      shelf item in the backlog — a `+` buys +0.22 ATK, three of five offers read
-      *worse than worn*, nothing to spend gold on before zone 2). Prestige sends
-      you back through exactly that stretch. Fixing it helps new players too,
-      which is a far better bet than a fix that only pays off after 45 days
+- [ ] **Prerequisite either way: the Grove is the game's weakest hour** — still
+      true, but for a narrower reason than this file claimed, now that it has been
+      measured (see the corrected shelf items in the backlog). It is not that
+      there is nothing to spend gold on; there is, and the sink eats most of it.
+      It is that the Grove's *tail* thins out — useful offers fall to 1-of-5 while
+      gold climbs to ~8.4k — and that a `+` is worth a fifth there of what it is
+      worth from Caves onward. Prestige sends you back through exactly that
+      stretch, and the first half of it is fine, which makes the fix smaller than
+      it looked. Fixing it still helps new players, which is a far better bet than
+      a fix that only pays off after 45 days
 
 ---
 
@@ -156,10 +161,25 @@ answerable.
       unchosen, because it turns the shelf into a vending machine and kills the
       "hunt the one good slot" read. Worth re-asking only if the tags make the
       Grove *feel* barren in play rather than merely look it; the effect is
-      self-correcting once ilvl spreads widen past Cobalt Caves. Related: a `+`
-      adds 2% of what the item rolled, which on Grove numbers is +0.22 ATK, so
-      upgrades are dead at that tier too and there is genuinely nothing to spend
-      gold on before the second zone
+      self-correcting once ilvl spreads widen past Cobalt Caves
+- [ ] **The "nothing to spend gold on before zone 2" half of this was measured on
+      2026-07-30 and is false** — the upgrade-legibility pass (`BUILD-LOG.md`)
+      came out of checking it. Folding real Grove runs through the engine: the
+      zone is ~25 hours at 300 events/day, the hero earns ~7k gold and the
+      *existing* sink absorbs ~5.9k of it, and 100% of shelf offers are
+      affordable by the time they leave. Gold has somewhere to go and the shop is
+      not priced out of reach. Two things that *are* true and were not the stated
+      reason: the shelf's useful offers decay from 5-of-5 early to 1-of-5 by
+      hour 22 while gold keeps climbing to ~8.4k, so it is the Grove's *tail*
+      that is thin, not its opening; and a `+` is worth 1.6% of hero ATK there
+      against 7–8.7% from Caves onward, because gear is 46% of a low hero's ATK
+      and 67% of a capped one's. The second is now *reported* rather than fixed —
+      re-tune only if it still reads badly with the numbers on screen
+- [ ] The measurement also killed an argument this file used to make: gold poured
+      into gear a drop later displaces is **not** destroyed. `autoEquip` benches
+      the upgraded item into the bag with its `+` intact, and both equip-ranking
+      and inventory eviction rank on `itemValue`, which counts `plus`. Only
+      `sellPrice` ignores it, which is the deliberate sink. Nothing to fix
 - [ ] **The away window still can't spawn a goblin, only lose one.** Wiring the
       escape into the summary (see `BUILD-LOG.md`) closed the case where a goblin
       was already standing there when you shut the laptop. It cannot handle the

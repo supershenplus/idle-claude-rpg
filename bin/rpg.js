@@ -74,6 +74,46 @@ function itemLine(it, i) {
 // engine so the CLI, `equip all` and the balance sim all rank items alike.
 const itemValue = E.itemValue;
 
+// What one more `+` on this item actually buys. Driven through the real engine
+// functions rather than re-deriving "2% of what it rolled", for the same reason
+// `previewAutoEquip` runs `autoEquip` against a facade: a second copy of the
+// rule drifts, and a listing that disagrees with the purchase it recommends is
+// worse than no listing.
+//
+// Diffed at the *item*, never at the hero, because `gearSum` rounds — and it is
+// the sub-integer part that this whole listing exists to show. A + is 2% of what
+// the item rolled, which on Grove numbers is +0.14 ATK, so diffing `heroAtk`
+// reports every early upgrade as buying exactly nothing. That is the wrong
+// answer twice over: `gearSum` rounds once across all twelve slots, so those
+// fractions do accumulate into whole points, and a player who is told a real
+// gain is zero has been misinformed rather than warned. `plus` only ever moves
+// one item, so the item's raw delta *is* the hero's, and ATK is the one stat
+// with anything on top of the sum — Insight scales it.
+function upgradeGain(st, it) {
+  const raw = () => ({ atk: E.itemStatRaw(it, 'atk'), def: E.itemStatRaw(it, 'def'), hp: E.itemStatRaw(it, 'hp') });
+  const before = raw();
+  const restore = it.plus || 0;
+  it.plus = restore + 1;
+  const after = raw();
+  it.plus = restore;
+  return {
+    atk: (after.atk - before.atk) * E.insightMult(st, 'atk'),
+    def: after.def - before.def,
+    hp: after.hp - before.hp,
+  };
+}
+
+// One decimal below 10, none above: the interesting range for this number is
+// 0.1-and-useless up to a couple of points, and "+14.0 HP" is just noise.
+// Anything under 0.05 would print as "+0.0", which reads as a rendering bug
+// rather than as a true statement about the item, so those stats are dropped.
+function fmtGain(g) {
+  const n = v => (v < 10 ? v.toFixed(1) : v.toFixed(0));
+  const parts = [g.atk >= 0.05 && `ATK +${n(g.atk)}`, g.def >= 0.05 && `DEF +${n(g.def)}`,
+    g.hp >= 0.05 && `HP +${n(g.hp)}`].filter(Boolean);
+  return parts.length ? parts.join(' ') : 'nothing';
+}
+
 // `equip all`: fill every empty slot with the best thing in the bag that fits.
 // Strictly additive — it never unequips, never displaces, and never touches a
 // slot you already filled, so there is nothing to preview and nothing to undo.
@@ -808,14 +848,23 @@ const commands = {
         }
         const cost = B.upgradeCost(it.ilvl, plus);
         const afford = st.hero.gold >= cost;
-        if (afford && (!cheapest || cost < cheapest.cost)) cheapest = { key, cost };
+        const gain = upgradeGain(st, it);
+        if (afford && (!cheapest || cost < cheapest.cost)) cheapest = { key, cost, gain };
+        // The gain, not just the price. Cost is linear in ilvl while a + is a
+        // percentage of gear, and gear is under half a low-level hero's ATK
+        // against two thirds of a capped one's — so upgrades are cheapest in
+        // exactly the zone they are worth least, and a shelf listing only the
+        // price recommends them hardest there. Same fix as the shop's
+        // `worse than worn` tag: let the dead option say so.
         console.log(`  ${key.padEnd(8)} ${itemLine(it)} — +${plus + 1} costs `
-          + `${afford ? R.fmtGold(cost) : R.c('dim', R.fmtGold(cost))}`);
+          + `${afford ? R.fmtGold(cost) : R.c('dim', R.fmtGold(cost))}`
+          + `  ${R.c('dim', `→ ${fmtGain(gain)}`)}`);
       }
       console.log(`\n  Each + adds ${Math.round(B.UPGRADE_STAT_PER_PLUS * 100)}% of what the item rolled,`
         + ` up to +${B.UPGRADE_MAX}. Upgrades are not refunded when you sell.`);
       console.log(cheapest
-        ? `  /hero upgrade <slot> · /hero upgrade <slot> max   (cheapest: ${cheapest.key}, ${R.fmtGold(cheapest.cost)})`
+        ? `  /hero upgrade <slot> · /hero upgrade <slot> max   `
+          + `(cheapest: ${cheapest.key}, ${R.fmtGold(cheapest.cost)} → ${fmtGain(cheapest.gain)})`
         : '  /hero upgrade <slot> — nothing is affordable yet.');
     };
 
@@ -869,6 +918,9 @@ const commands = {
       return;
     }
 
+    // Measured before the gold moves, because `upgradeGain` reads the item's
+    // current `plus` to work out what the next one is worth.
+    const gain = upgradeGain(st, it);
     const res = E.upgradeItem(st, it);
     if (!res.ok) {
       console.log(res.why === 'maxed'
@@ -879,7 +931,11 @@ const commands = {
     E.tick(st, `${it.name} +${it.plus}`);
     S.saveState(st);
     console.log(`\n  ${itemLine(it)}`);
-    console.log(`  +${res.plus - 1} → +${res.plus} for ${R.fmtGold(res.cost)}. `
+    // What it bought, not just what the totals now read. This is a one-shot
+    // spend with no preview, so the absolute ATK/DEF/HP alone left the player
+    // no way to tell a real gain from one that rounded away — which, below
+    // Cobalt Caves, is most of them.
+    console.log(`  +${res.plus - 1} → +${res.plus} for ${R.fmtGold(res.cost)}, buying ${fmtGain(gain)}. `
       + `ATK ${Math.round(E.heroAtk(st))}  DEF ${E.heroDef(st)}  HP ${st.hero.hp}/${st.hero.maxHp} · ${R.fmtGold(st.hero.gold)} left.`);
   },
 

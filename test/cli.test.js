@@ -316,6 +316,57 @@ test('upgrade max previews the spend and the stats before it takes the gold', ()
     'stopped upgrading while it could still afford another level');
 });
 
+// The upgrade shelf is where the buying decision is made, and it used to list
+// twelve slots by price alone. Cost is linear in ilvl while a + is a percentage
+// of gear — and gear is under half a Grove hero's ATK against two thirds of a
+// capped one's — so the cheapest upgrades in the game are the ones worth least,
+// and a price-only shelf recommends them hardest. These pin the gain column that
+// fixes it, at both ends of the range, since a listing that reported the same
+// thing everywhere would pass a test written at only one.
+test('the upgrade shelf says what a + buys, not just what it costs', () => {
+  seed(st => {
+    st.hero.gold = 100000;
+    st.equipment.weapon = item('weapon', 50, 'epic');
+    st.equipment.head = item('head', 3);
+  });
+  const out = run('upgrade');
+
+  // A big item's + is a real gain and has to show as a number.
+  assert.match(out, /weapon.*→ ATK \+\d/, 'no gain shown for an i50 weapon');
+  // A tiny one's rounds under a tenth, and saying so is the whole point.
+  assert.match(out, /head.*→ nothing/, 'an i3 head was not reported as buying nothing');
+  // …and the recommendation carries it too, so the trap is visible in the very
+  // line that points at the trap: the cheapest slot here is the useless one.
+  assert.match(out, /cheapest: head, .*→ nothing/, 'the nudge recommends on price alone');
+});
+
+test('a + that buys a fraction of a point is reported, not rounded away', () => {
+  // The reason the gain is measured at the item and not at the hero. `gearSum`
+  // rounds its total, so one + on a small item moves the *stat sheet* by
+  // nothing — but it is not nothing, and enough of them cross a whole point.
+  // Diffing `heroAtk` would report the fraction as zero, which is a false
+  // statement rather than a conservative one; the sum keeps every fraction and
+  // rounds once, so the honest report is the fraction itself.
+  seed(st => {
+    st.hero.gold = 100000;
+    st.equipment.weapon = item('weapon', 8, 'uncommon');
+  });
+  const before = E.heroAtk(S.loadState());
+  const out = run('upgrade', 'weapon');
+
+  assert.match(out, /buying ATK \+0\.\d/, `expected a sub-point ATK gain, got: ${out}`);
+  assert.doesNotMatch(out, /buying nothing/, 'a real fractional gain was reported as nothing');
+  assert.strictEqual(S.loadState().equipment.weapon.plus, 1);
+
+  // The fraction is real: keep buying and the rounded stat does move, which is
+  // what makes reporting it — rather than zero — the truthful answer.
+  for (let i = 0; i < 4; i++) run('upgrade', 'weapon');
+  const st = S.loadState();
+  assert.strictEqual(st.equipment.weapon.plus, 5);
+  assert.ok(E.heroAtk(st) > before,
+    `five upgrades left ATK at ${E.heroAtk(st)} from ${before} — the fractions went nowhere`);
+});
+
 test('reset refuses without --confirm and leaves the save untouched', () => {
   const st0 = seed(st => { st.inventory = [item('head', 3)]; });
   const { out, code } = runFail('reset');

@@ -176,10 +176,27 @@ never a refundable deposit. What `+` *does* count toward is which item you'd
 rather wear, so auto-equip never benches gear you invested in for an identical
 raw drop.
 
-Early on it is deliberately bad value — 2% of a 3-point stat is a rounding error,
-and the same gold buys a whole rare off the shelf. `upgrade <slot> max` shows the
-ATK/DEF/HP its spend would actually buy and says so outright when the gain rounds
-to nothing, so the trap is visible before the gold is gone rather than after.
+Early on it is deliberately bad value, and the size of that gap is worth knowing,
+because it is not a property of the upgrade curve at all. A `+` is a percentage of
+*gear*, and gear is only 46% of a Grove hero's ATK against 67% of a capped one's —
+class base and per-level ATK dominate while you are low. So every `+` is worth
+**1.6%** of hero ATK leaving the Grove and settles at 7–8.7% from Cobalt Caves
+onward, a fifth of its steady-state value in the one zone every player starts in.
+Meanwhile `upgradeCost` is *linear* in ilvl. The two curves disagree: upgrades are
+cheapest in exactly the zone they are worth least.
+
+So every path that spends gold on a `+` reports what it buys, not just what it
+costs — the shelf's per-slot gain column, the `cheapest:` nudge that used to
+recommend on price alone, the single `upgrade <slot>`, and `upgrade <slot> max`.
+A dead one says `→ nothing` outright. This is the same fix as the shop's
+`worse than worn` tag, and the same reasoning: the roll stays honest, and the
+listing stops hiding what it costs you.
+
+The gain is measured at the item rather than at the hero, because `gearSum`
+rounds its total — one `+` on a small item moves the stat sheet by nothing, but
+it is not nothing, and the sum keeps every fraction and rounds once, so enough of
+them cross a whole point. Reporting `+0.1 ATK` is the truthful answer; reporting
+zero would not be.
 
 ## The loot goblin
 
