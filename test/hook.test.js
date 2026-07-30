@@ -72,8 +72,12 @@ function pipe(home, file) {
   });
 }
 
-const stateOf = home => JSON.parse(
-  fs.readFileSync(path.join(home, 'state.json'), 'utf8'));
+// Through the `active` pointer rather than a hardcoded slug, because that is
+// the indirection the hook itself goes through to find the save.
+const stateOf = (home) => {
+  const slug = fs.readFileSync(path.join(home, 'active'), 'utf8').trim();
+  return JSON.parse(fs.readFileSync(path.join(home, 'characters', slug, 'state.json'), 'utf8'));
+};
 
 for (const [file, expected] of CORPUS) {
   test(`the hook folds ${file} rather than dropping it`, () => {

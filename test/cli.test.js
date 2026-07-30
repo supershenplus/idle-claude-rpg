@@ -338,7 +338,7 @@ test('reset --confirm deletes every file the save is spread across', () => {
   // …and the copies a save spills into. Both of these are whole save files
   // with a playable hero inside them, so "forever" has to reach them too.
   const spilled = [`state.corrupt-${Date.now()}.json`, 'state.v1.json']
-    .map(f => path.join(P.STATE_DIR, f));
+    .map(f => path.join(P.CHAR_DIR, f));
   for (const f of spilled) fs.writeFileSync(f, fs.readFileSync(P.stateFile));
 
   const out = run('reset', '--confirm');

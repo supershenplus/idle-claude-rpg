@@ -51,7 +51,7 @@ The monster gets a swing back. A failing test or a failing command is drawn as a
 lunge — wind up, come forward, mark crossing the gap right-to-left, `♥-46` for
 what it cost — instead of HP quietly leaving the bar, which is what it used to
 be. And it reels when you connect: knocked back two cells and lit up in the
-colour of the number hitting it. One script covers all 28 monsters; the seven
+colour of the number hitting it. One script covers all 30 monsters; the seven
 bosses scale it by a *depth* — how far they come and how long they hold it — so
 Rootfang heaves where a leech jabs, on no extra art. Depth is paid for in
 distance rather than out of the gap, so a deep boss stands correspondingly
@@ -74,13 +74,18 @@ node bin/demo.js            # or: node bin/demo.js boss loot --mode compact
 - 4 classes: Wizard (crits), Knight (tanky, commits hit harder), Rogue
   (gold + loot), Ranger (LOC damage + XP).
 - 7 zones from Whispering Grove to **Production** (Heisenbug, Race Condition,
-  Memory Leak…), each with a boss that gates the next zone.
+  Memory Leak…), each with a boss that gates the next zone — 22 trash monsters,
+  7 bosses, and a loot goblin that turns up anywhere.
 - Loot in 5 rarities across 12 gear slots, a shop that restocks every 4 hours,
   and a 20-slot bag.
-- Level cap 60 — roughly 2-4 months of regular use. Passing tests is the
-  best XP (60s cooldown, don't bother loop-farming), a failing command means
-  the monster hits *you*, and Stop events let your hero rest.
-- Away for hours? Offline progress trickles in while the app is closed.
+- Level cap 60 — the sim reaches it on day 43 at 300 events a day, day 27 at
+  500. Passing tests is the best XP (60s cooldown, don't bother loop-farming),
+  a failing command means the monster hits *you*, and Stop events let your hero
+  rest.
+- Past the cap, XP banks into **Insight**: three paragon tracks, and about
+  another four months of spending.
+- Away for hours? Offline progress trickles in while the app is closed — and a
+  goblin you left alive spends its patience while you're gone.
 
 ## Gear
 
@@ -116,7 +121,7 @@ preview and nothing to undo.
 
 That additivity is also a trap. Run `equip all` once and you read as "geared"
 forever while the zone climbs past you — that's the sim's `fill` profile, and it
-dies 238 times a run against the attentive player's 2. `/hero equip best` is the
+dies 274 times a run against the attentive player's 1. `/hero equip best` is the
 way out: the same ranking, but allowed to **displace** anything the bag beats. It
 fills empty slots too, so it is a superset of `equip all`. No `--confirm` — it
 only moves gear between your body and your bag, and it prints every swap and the
@@ -164,7 +169,7 @@ meant to be choosing which items to invest in, never maxing everything.
 This exists because gold had no floor. Levels cap and loot caps, but an attentive
 player finished a run holding **~1.07M** with nothing left to buy, and the number
 barely moved whatever the death penalty was set to (they only die a few times).
-Upgrades absorb ~515k of that in the sim and leave ~69k idle.
+Upgrades absorb ~438k of that in the sim and leave ~88k idle.
 
 The gold is genuinely destroyed: sell price ignores `+` entirely, so upgrading is
 never a refundable deposit. What `+` *does* count toward is which item you'd
@@ -175,6 +180,81 @@ Early on it is deliberately bad value — 2% of a 3-point stat is a rounding err
 and the same gold buys a whole rare off the shelf. `upgrade <slot> max` shows the
 ATK/DEF/HP its spend would actually buy and says so outright when the gain rounds
 to nothing, so the trap is visible before the gold is gone rather than after.
+
+## The loot goblin
+
+5% of non-boss spawns aren't the local wildlife:
+
+```
+⚔ Gavin the Rogue  Lv 15  XP [█████░░░░░] 2.9k/5.8k   ♥ 101/142   ⛁ 12,400g
+                     ▗▄▄▖   ╱                ▖ ▗ ▗▄▄▄▄▄▖
+                     ▖▟█◕▙ ╱                ◢$█$◣▟▓⛁▒▓█▙
+                    ▚░▒█▓▙╪                ◀▝▄██▄▟▒▓▒▓█▌
+                    ▚░▒██▓                   ▟██▛▐▓▒⛁▓█▌
+                    ▝▜▛ ▜▙                  ▐▘ ▝▙●▝▀▀▀▀▘
+                          ≡$≡ ⛁ LOOT GOBLIN ⛁ — get it before it runs ≡$≡
+  Cobalt Caves · it is not from around here
+```
+
+It is one monster for the whole game rather than one per zone — it has no home
+band, it turns up wherever you are and fights at the level the trash there would
+have been. A per-zone roster would be another name in every zone for a thing whose
+entire character is "not from around here". The coins are part of its name (`⛁ Loot
+Goblin ⛁`, the same glyph the vitals line uses for gold), so the nameplate, the
+kill ticker and the banner's uppercase all pick them up for free.
+
+Every number it carries is a **multiple of what that same spawn would have been**,
+never an absolute — ×3 HP, ×3 XP, and a payout that is either ×8 gold or, 30% of
+the time, a guaranteed **epic or better** at its own item level. That is the whole
+safety property: a goblin met at level 8 in the Grove pays Grove rates, so it
+stays a windfall instead of handing a level-8 hero Null Expanse gear.
+
+**It bites, and it runs.** A sack of gold guarded by nothing is a vending machine,
+not an event — and the sim proved it literally: as a fat trash mob carrying a
+prize, it over-geared the attentive hero into 1 death per 90 days against a floor
+of one per 30. So it counters at 40% for full damage (trash is 30% at 0.45×,
+bosses 45% at 1.6×), and since the fight runs three times as long, total exposure
+is roughly nine times a trash mob's.
+
+The deadline is counted in **folded events, never seconds**: a wall-clock timer
+would be the only thing in the engine whose outcome depends on when you happened
+to look, and `fold` exists precisely so a replay lands where the live run did. The
+goblin gets 10 events to survive. Ten is measured, not guessed — escape rates over
+six seeds × 90 days:
+
+| events | attentive | under-geared |
+|---|---|---|
+| 8 | 19.2% | 68.8% |
+| 9 | 11.9% | 62.3% |
+| **10** | **5.9%** | **50.7%** |
+| 11 | 3.9% | 43.7% |
+| 14 | 0.0% | — (feature never fires) |
+
+A hero who wears what they find loses about one goblin in seventeen; a hero who
+never opens their inventory loses half of them. That spread is the point — the
+deadline is a DPS check, so gear is the whole defence, and falling behind is what
+makes the goblin start getting away.
+
+```
+⚔ Gavin the Rogue  Lv 15  XP [█████░░░░░] 2.9k/5.8k   ♥ 78/…
+   ▚░▒█◕▙╪              ◀$█▄▟⛁▓▌
+ ≡$≡ ⛁ Loot Goblin ⛁ got away with the sack ≡$≡
+ Cobalt Caves · it slipped away with the sack
+```
+
+Closing the lid does not freeze the clock. Away kills are the away window's unit
+of work, so they spend the goblin's patience the way folded events do — otherwise
+"get it before it runs" stopped being true the moment you stopped looking. An
+escape that happens while you're gone is reported in the away summary (`· a goblin
+got away`) rather than only in a banner nobody was there to see: it is the one
+outcome in this game you can lose without ever being told it happened.
+
+Boss progress is credited for the *time* the goblin took (3 kills, its HP
+multiplier) rather than the one kill it technically is. Crediting a single kill
+looked defensible and wasn't: a controlled sim — same `rand()` stream, goblin
+chance 0 vs 0.05 — put boss kills over 90 days at 65 without goblins and 56 with,
+a 14% cut, because every goblin was silently eating three trash mobs' worth of
+approach. `/hero stats` counts goblins killed and, separately, how many got away.
 
 ## Past the cap
 
@@ -190,14 +270,16 @@ the cap now banks into **Insight**, spent on three tracks:
 
 Points cost 1 Insight each for the first three, rising to 9 for the twenty-fifth.
 The whole board is 351 Insight, which the sim puts at roughly **120 days past the
-cap** against the 45 it took to reach it — you get your first point within hours,
-and you are still choosing tracks months later.
+cap** against the six weeks it took to reach it — you get your first point within
+hours, and you are still choosing tracks months later.
 
 This is deliberately **not** a prestige reset. Level, gear, gold and zone are
 never touched. The game ticks while you are looking at a compiler rather than at
 it, and wiping twelve slots you spent weeks filling — at a moment you weren't
 even watching — is the opposite of this codebase's line that a setback should
-have a way back.
+have a way back. If what you wanted from prestige was a fresh start in a
+different class, that is [the roster](#several-characters), and it costs you
+nothing.
 
 `/hero insight` shows the board; `/hero insight <track>` buys one point;
 `/hero insight <track> max` previews the spend and needs `--confirm`, because
@@ -217,6 +299,59 @@ kills afterwards — repeat clears count up (`DEFEATED ×4`) rather than replayi
 the ending. There is no prestige reset; see the note above for why.
 
 `node bin/demo.js cleared` draws the frame without the two months.
+
+## Several characters
+
+There are four classes and you only ever played one. Knight makes commits hit
+harder, Ranger turns lines of code into damage, Wizard crits, Rogue farms —
+those genuinely change how *your work* maps to the game, and trying a second one
+used to cost you the first: `init` refused unless you passed `--force`, whose
+help text was honest about what it did ("this deletes your hero").
+
+```
+  Characters (3):
+
+  ▸ 1. ▐◉▌───┃ Eva the Wizard            Lv 60  Production        1.2M      ✦ cleared
+    2. ╪░▟◉█▙◆ Gavin the Knight          Lv 31  Ember Wastes      14,208g   2d ago
+    3. ▚▒█◔▓┼▶ 勇者 the Ranger            Lv 4   Whispering Grove  212g      3w ago
+```
+
+`/hero init` now **adds** a hero and switches to it; there is no `--force` path
+at all, because that flag's only remaining meaning would be "delete the hero I
+am about to stop using". `/hero roster` lists them, `/hero switch <n|id|name>`
+changes which one you are playing, and `/hero delete <n> --confirm` is the one
+that removes anything.
+
+Switching is **machine-wide**, and that is the direct cost of a property worth
+keeping. One save behind every repo and every open window is why three windows
+triple your tick rate on one hero; it is also why switching in one window swaps
+the hero in every other HUD on its next frame, mid-animation. The escape hatch
+is the pattern `$RPG_HUD` already uses over the saved HUD pin: `IDLE_RPG_HERO=hero_2`
+in one window's environment overrides the shared pointer for that window only.
+Anyone who wants two heroes at once opts in; nobody else pays.
+
+Two things it deliberately does not do. **Prestige is not part of it** — see
+[Past the cap](#past-the-cap) for why nothing here wipes anything, and note that
+what people usually want from prestige is "play a Knight without losing my
+Wizard", which is this. And a new character does not get its own inbox: the hook
+appends work events without knowing who is active — it runs on every tool call
+and cannot afford to load a save to find out — so the inbox is global and
+whoever is on the clock gets paid for the work. Same for the lock.
+
+One thing genuinely breaks, and it is small enough to keep. **A switch can
+swallow one War Horn.** Pushes are read out of the repository (below), and the
+record of what each remote pointed at lives *in the save* — so a character who
+has never been played in this repo has nothing to compare against and will not
+fire the horn on its first push here. The fix would be a global repo map, which
+costs the "a save is self-contained" property that makes backup and recovery
+comprehensible. One horn, once per character per repo.
+
+Old installs migrate on first run: the flat `state.json` and everything it
+spilled into move down into `characters/hero_1/` with their filenames unchanged,
+and `active` is written to point at it. The save moves **last**, so an adoption
+interrupted halfway is resumed rather than restarted — the other order would
+strand the backup generations at the top level with nothing left to trigger a
+second attempt, and the backups are the whole recovery story.
 
 ## Install
 
@@ -278,14 +413,31 @@ with no error message anywhere.
 
 Removes the `/hero` skill and only our entries from `settings.json` (backed up
 first; co-tenant hooks and a status line that isn't ours are left in place).
-Your hero survives in `~/.config/idle-claude-rpg/` — delete that directory by
-hand if you want it gone too.
+Your heroes survive in `~/.config/idle-claude-rpg/` — delete that directory by
+hand if you want them gone too.
 
 ### What the save holds
 
 Everything lives in `~/.config/idle-claude-rpg/`, never leaves the machine, and
 is written with your default umask (usually mode `644` — readable by other users
-on a shared box). Beyond the obvious hero and loot, `state.json` keeps one entry
+on a shared box):
+
+```
+~/.config/idle-claude-rpg/
+├── active                       which hero this machine is playing
+├── events.ndjson                the shared inbox — global, see below
+├── state.lock
+└── characters/
+    ├── hero_1/state.json        one directory per hero, +4 backup generations
+    └── hero_2/state.json
+```
+
+Slugs are generated (`hero_2`) rather than derived from the hero's name. Names
+are user input, sanitized but legitimately CJK or emoji, and a path built from
+one hits filesystem-unsafe characters, macOS case-insensitive collisions and
+length limits. The display name stays inside the save, where it already was.
+
+Beyond the obvious hero and loot, `state.json` keeps one entry
 per repo you have worked in: the **absolute path** to its git directory and the
 SHA its remote-tracking branch pointed at. That is how a push made outside
 Claude's tools is detected at all — see below — and it is capped at the 24
@@ -307,7 +459,9 @@ legacy gear doesn't permanently outclass every new drop for its slot.
 `/hero` (status) · `/hero zone [go <id>]` · `/hero shop [buy <n>]` ·
 `/hero inventory` · `/hero equip <n> [slot] | all | best` ·
 `/hero upgrade [<slot> [max]] [--confirm]` · `/hero insight [<track> [max]] [--confirm]` ·
-`/hero sell <n> | all | <rarity…> [--confirm]` · `/hero stats`
+`/hero sell <n> | all | <rarity…> [--confirm]` · `/hero stats` ·
+`/hero hud [big|compact|auto]` · `/hero roster` · `/hero switch <n|id|name>` ·
+`/hero delete [<n|id|name>] --confirm` · `/hero reset --confirm`
 
 All of it also works token-free as `! node bin/rpg.js <cmd>`.
 
@@ -376,13 +530,17 @@ rather than about who typed it, so every route into one now counts.
 
 The hook and the statusline both poll, and both share one recorded SHA per repo
 in the save, so whichever notices first fires and the other sees no change.
-That shared record is the whole dedup story — no time windows to tune.
+That shared record is the whole dedup story — no time windows to tune. It being
+*in the save* is also why a freshly switched-to character misses its first horn
+in a repo it has never seen — see [Several characters](#several-characters).
 
 **Death is punctuation, and it lives at bosses.** Trash costs a properly equipped
 hero well under 3% of max HP per kill against 1%/min passive regen, so grinding
 keeps your bar full and only an under-geared hero feels it — which is the game
 telling you to go equip something. Bosses are the real threat: they counter *more*
 often and far harder, and a boss fight is expected to cost most of a health bar.
+The [loot goblin](#the-loot-goblin) sits between the two, and is the only fight
+you can lose without dying.
 
 Lose one and the boss drives you off rather than restarting the fight — you keep
 your level and loot but forfeit the 15 kills that earned the attempt. That matters
@@ -400,14 +558,18 @@ literally immune, while an under-geared one ate the entire curve.)
 ## Dev
 
 ```sh
-node --test 'test/*.test.js'      # 348 tests incl. concurrency stress
+node --test 'test/*.test.js'      # 399 tests incl. concurrency stress
 node test/sim.js --days 90        # replay synthetic days through the engine
 node test/sim.js --assert         # balance gates, across all three equip profiles
-node bin/demo.js --list           # HUD scenes, for screenshots and layout work
+node bin/demo.js --list           # 23 HUD scenes, for screenshots and layout work
 ```
 
 (Point it at the glob, not `test/` — the directory also holds `sim.js`, which is
 a simulation script rather than a test file.)
+
+CI runs both of those on Node 18/20/22/24 plus macOS, and fails the build if a
+`package.json` or `node_modules` ever appears — the dependency-free invariant is
+the kind of thing that erodes by accident, so it is asserted rather than trusted.
 
 `--assert` is the guard that matters when touching combat. It replays synthetic
 days through the real engine as three different players, because balance that
@@ -444,8 +606,11 @@ Adding a gear slot means adding it in three places: `content.SLOT_TYPES` (count
 `state.CURRENT_VERSION` with a migration if saved items need re-slotting.
 `test/equipment.test.js` fails if the first two drift apart.
 
-State lives in `~/.config/idle-claude-rpg/` (atomic writes, four rolling hourly
-backups, corrupt-save quarantine). The backups step back one generation an hour
+State lives in `~/.config/idle-claude-rpg/characters/<slug>/` (atomic writes,
+four rolling hourly backups, corrupt-save quarantine — per character, and the
+filenames inside are unchanged from before the roster, which is the entire
+reason for the extra directory: a flat `state.<slug>.bak.2.json` would make
+every filename regex in `state.js` ambiguous). The backups step back one generation an hour
 rather than keeping a single daily copy, because the write that motivated them
 was not a corruption but a perfectly valid save written over a good one — which
 nothing in the load path can detect, so depth of history is the only defence.
@@ -459,6 +624,13 @@ also the only coverage of several animation branches: a legendary drop, a boss
 intro and a death are rare by design, so waiting for one is not a test strategy.
 It earns its keep — the unseparated `-21594g` in the death banner was found by
 looking at a screenshot of it.
+
+Naming a frame means naming the clock too: animations are picked by elapsed time,
+and a demo that spawns a child process is asking for a frame across a boundary the
+scheduler is free to stretch, so `heave` sometimes drew whatever came next.
+`$RPG_NOW` pins the clock the scene is drawn against and the offset becomes exact.
+It moves the picture and not the save — the fold underneath deliberately keeps the
+real clock.
 
 `bin/settings.js` is the wiring: `print` / `merge` / `remove` / `check`, all
 keyed off the two script basenames rather than exact command strings, so a

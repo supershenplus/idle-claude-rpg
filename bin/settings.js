@@ -382,12 +382,16 @@ function doCheck() {
     else hm(`statusLine is someone else's (${i.statusLine.command}) — the game will not draw a HUD`);
   }
 
+  // The active character, and how many others there are — a doctor that reports
+  // one hero on a machine with four is describing the wrong save.
+  const others = P.listSlugs().length - 1;
+  const also = others > 0 ? ` (+${others} other character${others === 1 ? '' : 's'} — /hero roster)` : '';
   if (!fs.existsSync(P.stateFile)) hm(`no hero yet at ${P.stateFile} — run /hero init`);
   else {
     try {
       const h = (JSON.parse(fs.readFileSync(P.stateFile, 'utf8')) || {}).hero;
       if (!h || !h.name) no(`save at ${P.stateFile} has no hero in it — run /hero init`);
-      else ok(`hero: ${h.name} the ${h.class}, level ${h.level} in ${h.zone}, ${h.gold}g`);
+      else ok(`hero: ${h.name} the ${h.class}, level ${h.level} in ${h.zone}, ${h.gold}g${also}`);
     } catch (e) { no(`save at ${P.stateFile} is unreadable: ${e.message}`); }
   }
   if (fs.existsSync(P.eventsFile)) {

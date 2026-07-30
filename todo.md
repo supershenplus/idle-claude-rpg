@@ -11,116 +11,19 @@ this file stays readable as a list of things to do.
 
 ---
 
-## The character roster — spec, 2026-07-30
+## Prestige — the one part of the roster spec that did not land
 
-The next feature. Written up before starting because the layout decision is hard
-to walk back once saves exist in the wild.
+The roster shipped on 2026-07-30 (`BUILD-LOG.md`), which was always the
+prerequisite: prestige, "switch character" and "restart" are one feature — *the
+save is not the only hero* — and the other two are now policies on a primitive
+that exists. What is left is the question the roster was supposed to make
+answerable.
 
-**The case, in one sentence: there are four classes and you only ever play one.**
-Knight makes commits hit harder, Ranger turns lines of code into damage, Wizard
-crits, Rogue farms — those genuinely change how *your work* maps to the game, and
-trying a second one currently costs you the first. `init` refuses when a save
-exists unless you pass `--force`, whose help text is honest about what it does:
-"this deletes your hero". That is the whole problem, and it is a file-layout
-problem wearing a game-design hat.
-
-**It also absorbs two other ideas.** Prestige, "switch character" and "restart"
-are one feature — *the save is not the only hero*. Switch is a pointer move,
-restart is "make a new one and keep the old", prestige is "make a new one that
-inherits something". Build the roster and the other two are policies on top of a
-primitive that already exists. Build prestige first and you have built the
-narrowest of the three, plus a reset nobody asked for.
-
-### Layout (recommended)
-
-- [ ] **`characters/<slug>/` per hero, with the existing filenames unchanged
-      inside it.** `state.json`, `state.bak.{1..4}.json`, `state.corrupt-*.json`,
-      `state.v*.json` and `state.tmp.<pid>.json` all move down one level and keep
-      their names, so `paths.js` gains one indirection and *nothing else in
-      `state.js` changes* — the `saveFiles()` glob, `reapOrphanTmp`'s pid regex
-      and the whole backup-generation walk keep working verbatim. The flat
-      alternative (`state.<slug>.bak.2.json`) makes every one of those regexes
-      ambiguous for the sake of a shallower tree. Not worth it
-- [ ] **A top-level `active` file naming the slug.** One line, read on every
-      load. Rewriting a pointer is atomic-ish and cheap; moving `state.json`
-      around to mean "current" is neither
-- [ ] **Slugs are generated, never derived from the hero's name.** Names are user
-      input: sanitized to 24 code points, and legitimately CJK or emoji
-      (`engine.sanitizeName` explicitly protects `勇者` and `Eva 🗡`). A path built
-      from that hits filesystem-unsafe characters, macOS case-insensitive
-      collisions and length limits. Use `hero_<base36>` and keep the display name
-      inside the save, where it already is
-
-### What must stay global, and why it is the easy thing to get wrong
-
-- [ ] **`events.ndjson` does not move.** The hook appends work events without
-      knowing which hero is active, and it must stay that way — it runs on every
-      tool call and cannot afford a load. Per-character inboxes would strand
-      events on whoever was active when they were written. Global inbox, and the
-      active hero receives whatever is in it: the events mean "work happened",
-      and whoever is on the clock gets paid for it
-- [ ] **`state.lock` does not move.** It serializes *folds*, and a fold now reads
-      `active` before it writes — two folds for different characters would still
-      race on that read. One lock for the whole install, unchanged
-
-### The decision that actually needs making
-
-- [ ] **Switching is machine-wide, and that is the direct cost of the property
-      worth keeping.** One save dir behind every repo and every open window is
-      why three windows triple your tick rate on one hero. It is also why
-      switching character in one window swaps the hero in every other HUD
-      instantly, mid-animation. The proposed answer is the pattern the codebase
-      already uses for exactly this shape of problem: the file-based `active` is
-      the default and switches everywhere, and an `IDLE_RPG_HERO` env var
-      overrides it per-window — precisely how `$RPG_HUD` already sits above the
-      saved HUD pin, warning included. Anyone who wants two heroes in two windows
-      opts in; nobody else pays
-
-### What composes for free (verified, do not re-derive)
-
-- [ ] Coming back to a hero left three weeks ago costs nothing new: `applyTime`
-      sees the gap, grants away progress capped at `OFFLINE_MAX_HOURS`, and
-      `pruneAnims` drops the stale queue. The sitting closes and reopens across
-      the same gap, so a switched-away character reports its last sitting
-      correctly the moment you return to it. All existing behaviour
-
-### What silently breaks, and is probably acceptable
-
-- [ ] **A switch can swallow one War Horn.** `state.repos` is per-save, and
-      `gitwatch.sync` returns `firstSight: true, pushed: false` the first time it
-      sees a repo — it needs a previous value to compare against. So a character
-      who has never been played in this repo will not fire the horn on its first
-      push here. The fix would be a global repos map, which costs the "a save is
-      self-contained" property that makes backup and recovery comprehensible.
-      Leave it; note it in the README
-
-### The destructive edges
-
-- [ ] **`reset --confirm` has to learn scope, and its promise is explicit.** It
-      currently deletes `S.saveFiles()` and the help says "forever". With a roster
-      it must mean *this character*, with a separate spelling for all of them —
-      likely `/hero delete [<slug>] --confirm` for one and leaving `reset` as the
-      nuclear option. Whichever way round, the wording has to change at the same
-      commit as the behaviour, not after it
-- [ ] **`init` stops being destructive.** Today: refuses unless `--force`, which
-      overwrites. After: creates a new character and switches to it, with no
-      `--force` path at all. That flag's only remaining meaning would be "delete
-      the hero I am about to stop using", which is what `delete` is for
-
-### Migration
-
-- [ ] **An existing install has `state.json` at the top level and must not
-      notice.** First run adopts it into `characters/<slug>/` with its backups,
-      quarantines and snapshots intact, and writes `active`. Idempotent, and it
-      has to run *before* `loadState`'s backup-walk, or a half-migrated directory
-      looks exactly like a corrupt save with recoverable generations behind it —
-      which would "recover" the hero into the wrong place
-
-### Only then, prestige
-
-- [ ] **Re-ask whether it is still wanted once the roster exists**, because the
-      thing people want from prestige is usually "play a Knight without losing my
-      Wizard", and that is the roster. If it is still wanted: the README's
+- [ ] **Re-ask whether it is still wanted, now that the roster exists**, because
+      the thing people want from prestige is usually "play a Knight without losing
+      my Wizard", and `/hero init` is that, in one command, for free. The honest
+      remainder is narrower than the original ask: a *second run of the same
+      class* that carries something forward. If it is still wanted: the README's
       standing objection (`Past the cap`) is to an *automatic* wipe imposed while
       you are not watching, and does not apply to an opt-in offer made at a moment
       you chose — but it does still apply to the wipe itself, so any version has

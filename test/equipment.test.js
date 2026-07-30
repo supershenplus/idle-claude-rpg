@@ -18,7 +18,12 @@ const C = require('../lib/content');
 const B = require('../lib/balance');
 const E = require('../lib/engine');
 const S = require('../lib/state');
+const P = require('../lib/paths');
 const { mulberry32 } = require('../lib/rng');
+
+// The two migration tests below stage a v1 save by writing it straight to disk,
+// which since the roster means writing it into the active character's directory.
+fs.mkdirSync(P.CHAR_DIR, { recursive: true });
 
 const T0 = 1_700_000_000_000;
 
@@ -97,7 +102,7 @@ test('v1 saves migrate by noun, keeping every item', () => {
     counters: { kills: 0, bossKills: 0, killsSinceBoss: 0, zoneKills: {}, commits: 0, pushes: 0, testsPassed: 0, testsFailed: 0, linesWritten: 0, goldEarned: 0, deaths: 0, lastTestXpAt: 0 },
     anim: [], ticker: [], eventsFolded: 0,
   };
-  fs.writeFileSync(path.join(HOME, 'state.json'), JSON.stringify(v1));
+  fs.writeFileSync(P.stateFile, JSON.stringify(v1));
 
   const s = S.loadState();
   assert.ok(s, 'v1 save was rejected instead of migrated');
@@ -126,7 +131,7 @@ test('v1 saves migrate by noun, keeping every item', () => {
 
 test('a v1 save with two items for one v2 slot keeps the loser in the bag', () => {
   const v1 = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', 'v1-slot-clash.json'), 'utf8'));
-  fs.writeFileSync(path.join(HOME, 'state.json'), JSON.stringify(v1));
+  fs.writeFileSync(P.stateFile, JSON.stringify(v1));
   const s = S.loadState();
   assert.ok(s.equipment.chest, 'nothing ended up in chest');
   assert.strictEqual(s.inventory.length, 1, 'the displaced item vanished');

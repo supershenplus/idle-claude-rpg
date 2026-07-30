@@ -26,7 +26,14 @@ function requireSave() {
   S.tryFold(Date.now(), { cwd: process.cwd() });
   const state = S.loadState();
   if (!state) {
-    console.log('No hero yet. Run: /hero init   (or: rpg.js init --class wizard --name You)');
+    // "No hero yet" is a lie on a machine with three of them — which is what a
+    // window pinned by $IDLE_RPG_HERO at an empty slug sees, and the one way
+    // this message can send you to `init` when you wanted `switch`.
+    const others = P.listSlugs();
+    console.log(others.length
+      ? `No hero at ${P.activeSlug()}, but you have ${others.length} character${others.length === 1 ? '' : 's'}`
+        + ' — /hero roster · /hero switch <n>'
+      : 'No hero yet. Run: /hero init   (or: rpg.js init --class wizard --name You)');
     process.exit(1);
   }
   return state;
@@ -312,6 +319,88 @@ function sittingLines(s) {
   return out;
 }
 
+// ---------- the roster ----------
+
+// Pad by rendered width, not by code points: a name is user input and is
+// legitimately CJK or emoji, both of which lie about their length.
+const padTo = (s, n) => s + ' '.repeat(Math.max(1, n - R.width(s)));
+
+function heroLabel(row) {
+  if (!row.name) return R.c('dim', 'unreadable save');
+  const cls = C.classes[row.class];
+  return `${row.name} the ${cls ? cls.name : row.class || '?'}`;
+}
+
+function rosterRow(row, i, activeSlug, now) {
+  const here = row.slug === activeSlug;
+  const glyph = sprites.heroes[row.class] ? sprites.heroes[row.class].idle : '  ';
+  const zone = row.zone && C.zoneById(row.zone) ? C.zoneById(row.zone).name : '—';
+  const tail = row.clearedAt
+    ? R.c('brightYellow', '✦ cleared')
+    : R.c('dim', row.playedAt ? `${R.relTime(Math.max(0, now - row.playedAt))} ago` : '');
+  // Padded by width rather than interpolated: every class sprite is 7 cells,
+  // but the fallback for an unreadable save is not, and one short row shears
+  // every column to its right.
+  const line = `  ${here ? R.c('brightGreen', '▸') : ' '} ${i + 1}. `
+    + padTo(glyph, 8)
+    + padTo(heroLabel(row), 26)
+    + padTo(row.level == null ? '' : `Lv ${row.level}`, 7)
+    + padTo(zone, 18)
+    + padTo(R.fmtGold(row.gold || 0), 10)
+    + tail;
+  return line.trimEnd();
+}
+
+// $IDLE_RPG_HERO sits above the `active` file exactly as $RPG_HUD sits above the
+// saved HUD pin, so a window pinned by the environment has to say so — otherwise
+// `switch` and `init` appear to do nothing here while quietly working everywhere
+// else. Warn and obey, the same as `hud` does.
+function heroEnvNote() {
+  const env = (process.env.IDLE_RPG_HERO || '').trim();
+  if (!env) return null;
+  if (!P.isSlug(env)) {
+    console.log(R.c('brightYellow', `  Note: $IDLE_RPG_HERO="${env}" is not a valid hero id, so it is ignored.`));
+    return null;
+  }
+  console.log(R.c('dim', `  Note: $IDLE_RPG_HERO=${env} pins this window, and overrides the machine-wide choice.`));
+  return env;
+}
+
+// A character named by roster number, by id, or by the start of the hero's name
+// — because the number is what you just read, the id is what a script would
+// hold, and the name is the only one of the three anybody remembers.
+function pickCharacter(word, rows) {
+  if (!word) return { why: 'missing' };
+  if (/^\d+$/.test(word)) {
+    const row = rows[parseInt(word, 10) - 1];
+    return row ? { row } : { why: 'range' };
+  }
+  const exact = rows.find(r => r.slug === word);
+  if (exact) return { row: exact };
+  const lower = word.toLowerCase();
+  const hits = rows.filter(r => (r.name || '').toLowerCase().startsWith(lower));
+  if (hits.length === 1) return { row: hits[0] };
+  if (hits.length > 1) return { why: 'ambiguous', hits };
+  return { why: 'unknown' };
+}
+
+// Shared by `switch` and `delete`: resolve or explain, and never guess.
+function resolveTarget(word, rows, usage) {
+  const pick = pickCharacter(word, rows);
+  if (pick.row) return pick.row;
+  if (pick.why === 'ambiguous') {
+    console.log(`"${word}" matches ${pick.hits.length} heroes: `
+      + pick.hits.map(r => `${r.name} (${r.slug})`).join(', ') + '. Use the number or the id.');
+  } else if (pick.why === 'range') {
+    console.log(`There ${rows.length === 1 ? 'is' : 'are'} ${rows.length} character${rows.length === 1 ? '' : 's'} — /hero roster to list them.`);
+  } else if (pick.why === 'missing') {
+    console.log(usage);
+  } else {
+    console.log(`No character called "${word}". /hero roster to list them.`);
+  }
+  process.exit(1);
+}
+
 const commands = {
 
   init() {
@@ -322,29 +411,133 @@ const commands = {
         console.log(`  ${c.id.padEnd(8)} ${sprites.heroes[c.id].idle.padEnd(12)} ${c.blurb}`);
       }
       console.log('\n  e.g.  node bin/rpg.js init --class wizard --name "Eva"');
+      if (P.listSlugs().length) console.log('  Your existing heroes are safe — this adds one. /hero roster');
       return;
     }
     if (!C.classes[clsId]) { console.log(`Unknown class "${clsId}". Options: ${Object.keys(C.classes).join(', ')}`); process.exit(1); }
-    if (S.hasSave() && !flag('force')) {
-      console.log('A save already exists. Use --force to overwrite it (this deletes your hero).');
-      process.exit(1);
-    }
+
+    // Nothing here is destructive any more, so there is no --force and no
+    // refusal: `init` makes a *new* character and points the machine at it. The
+    // flag used to mean "delete the hero I am about to stop using", which is
+    // what `/hero delete` is for now.
+    const before = P.listSlugs();
+    const env = (process.env.IDLE_RPG_HERO || '').trim();
+    // A window pinned at a slug that has no hero in it is asking for that hero
+    // to exist, so build it there rather than somewhere the window can't see.
+    const slug = P.isSlug(env) && !before.includes(env) ? env : P.freeSlug();
+
     const name = typeof flag('name') === 'string' ? flag('name') : 'Hero';
     const state = E.newState(clsId, name, Date.now());
+    P.useSlug(slug);        // write the save…
     S.saveState(state);
+    P.setActive(slug);      // …and only then send everyone else to it
     const c = C.classes[clsId];
     // The saved name, not the flag: newState sanitizes, and echoing the raw
     // argument would print the one string we just decided not to print.
     console.log(`\n  ${sprites.heroes[clsId].idle}  ${state.hero.name} the ${c.name} awakens in ${C.zoneById('grove').name}.`);
     console.log(`  A wild ${state.monster.name} ${state.monster.sprite} appears!\n`);
     console.log('  Every command you run in Claude Code is now an attack. Go build something.');
+    if (before.length) {
+      console.log(R.c('dim', `\n  ${before.length} other character${before.length === 1 ? '' : 's'} untouched`
+        + ` — /hero roster · /hero switch <n>`));
+    }
+    if (P.isSlug(env) && env !== slug) {
+      console.log(R.c('brightYellow',
+        `\n  ⚠ this window is pinned to ${env} by $IDLE_RPG_HERO, so it keeps showing that hero.`));
+    }
+  },
+
+  // The roster exists because there are four classes and you only ever play
+  // one. Knight makes commits hit harder, Ranger turns lines of code into
+  // damage — those genuinely change how your work maps to the game, and trying
+  // a second one used to cost you the first.
+  roster() {
+    const rows = S.roster();
+    const now = Date.now();
+    if (!rows.length) {
+      console.log('No heroes yet. Run: /hero init   (or: rpg.js init --class wizard --name You)');
+      return;
+    }
+    const active = P.activeSlug();
+    console.log(`\n  Characters (${rows.length}):\n`);
+    rows.forEach((row, i) => console.log(rosterRow(row, i, active, now)));
+    console.log('\n  /hero switch <n> · /hero init --class <id> --name "…" · /hero delete <n> --confirm');
+    heroEnvNote();
+  },
+
+  // Switching is machine-wide, which is the direct cost of the property worth
+  // keeping: one save behind every repo and every window is why three windows
+  // triple your tick rate. $IDLE_RPG_HERO is the opt-out for anyone who wants
+  // two heroes in two windows, and nobody else pays for it.
+  switch() {
+    const rows = S.roster();
+    if (!rows.length) { console.log('No heroes yet. /hero init to make one.'); process.exit(1); }
+    const row = resolveTarget(String(args[0] || ''), rows, 'Usage: /hero switch <n|id|name>  (see /hero roster)');
+
+    if (row.slug === P.activeSlug()) {
+      console.log(`Already playing ${heroLabel(row)}.`);
+      heroEnvNote();
+      return;
+    }
+    P.setActive(row.slug);
+    console.log(`\n  ${sprites.heroes[row.class] ? sprites.heroes[row.class].idle : ''}  Now playing ${heroLabel(row)}`
+      + `${row.level == null ? '' : `, level ${row.level}`}.`);
+    console.log('  Every window on this machine follows, from its next frame.');
+    const env = heroEnvNote();
+    if (env && env !== row.slug) {
+      console.log(R.c('brightYellow', `  ⚠ except this one — it stays on ${env} until you unset it.`));
+    }
+  },
+
+  // One character, gone. `reset` is still the nuclear option; this is the one
+  // you actually want, and the difference has to be visible in the wording
+  // before the confirm rather than after it.
+  delete() {
+    const rows = S.roster();
+    if (!rows.length) { console.log('No heroes to delete.'); process.exit(1); }
+    const word = String(args.find(a => !a.startsWith('--')) || '');
+    const row = word
+      ? resolveTarget(word, rows, 'Usage: /hero delete <n|id|name> --confirm')
+      : rows.find(r => r.slug === P.activeSlug()) || rows[0];
+
+    if (!flag('confirm')) {
+      console.log(`\n  This deletes ${heroLabel(row)}${row.level == null ? '' : `, level ${row.level}`}`
+        + ` (${row.slug}) and every backup of them, forever.`);
+      const left = rows.length - 1;
+      console.log(`  ${left ? `${left} other character${left === 1 ? '' : 's'} would be untouched.` : 'It is your only character.'}`);
+      console.log(`\n  Nothing deleted yet — confirm with:  /hero delete ${word || row.slug} --confirm`);
+      return;
+    }
+
+    for (const f of S.saveFilesFor(row.slug)) {
+      try { fs.unlinkSync(f); } catch (_) { /* not there */ }
+    }
+    // Only if it emptied: a live `state.tmp.<pid>.json` belongs to another
+    // process, and saveFilesFor deliberately spares it.
+    try { fs.rmdirSync(P.charDir(row.slug)); } catch (_) { /* something of theirs is still in it */ }
+
+    // The pointer has to move or the next fold reads a hero who isn't there.
+    // Fail-open would land on the first character anyway; doing it here means
+    // the answer is written down rather than re-derived every process.
+    const left = P.listSlugs();
+    if (row.slug === P.activeSlug()) {
+      if (left.length) P.setActive(left[0]);
+      else try { fs.unlinkSync(P.activeFile); } catch (_) { /* never written */ }
+    }
+    console.log(`Deleted ${heroLabel(row)} (${row.slug}).`
+      + (left.length ? ` Now playing ${heroLabel(S.describe(P.activeSlug()))}.` : ' /hero init to start over.'));
   },
 
   status() {
     const st = requireSave();
     const h = st.hero, m = st.monster, c = C.classes[h.class], zone = C.zoneById(h.zone);
     const xpNeed = h.level >= B.LEVEL_CAP ? 0 : B.xpToNext(h.level);
-    console.log(`\n  ${sprites.heroes[h.class].idle}  ${h.name} the ${c.name} — Level ${h.level}`);
+    // Which of your heroes this is, but only once there is more than one to
+    // confuse it with — a roster of one is the game as it always was.
+    const kin = P.listSlugs();
+    const which = kin.length > 1
+      ? R.c('dim', `   (${kin.indexOf(P.activeSlug()) + 1} of ${kin.length} — /hero roster)`) : '';
+    console.log(`\n  ${sprites.heroes[h.class].idle}  ${h.name} the ${c.name} — Level ${h.level}${which}`);
     // At the cap the XP bar has nothing left to fill, so the line reports the
     // Insight the same XP is now banking instead — otherwise a capped hero reads
     // as a hero whose numbers have stopped moving.
@@ -766,20 +959,43 @@ const commands = {
     require('../test/sim').run(days, perDay, true);
   },
 
+  // The nuclear option: every character, not just the one you are playing.
+  // `/hero delete` is the scalpel. The wording changed at the same commit as
+  // the behaviour, because "this deletes your hero forever" is now true of a
+  // different, smaller command.
   reset() {
-    if (!flag('confirm')) { console.log('This deletes your hero forever. Rerun with --confirm.'); process.exit(1); }
-    // S.saveFiles() rather than a list written out here: a save spills into
+    const slugs = P.listSlugs();
+    if (!flag('confirm')) {
+      console.log(slugs.length > 1
+        ? `This deletes all ${slugs.length} of your characters forever — not just the one you are playing.`
+          + '\n  For one of them: /hero delete <n> --confirm   (see /hero roster)'
+          + '\n  Rerun with --confirm to wipe every hero on this machine.'
+        : 'This deletes your hero forever. Rerun with --confirm.');
+      process.exit(1);
+    }
+    // S.saveFilesFor rather than a list written out here: a save spills into
     // quarantined and pre-migration copies, and "forever" has to mean them too.
-    for (const f of S.saveFiles()) {
+    for (const slug of slugs) {
+      for (const f of S.saveFilesFor(slug)) {
+        try { fs.unlinkSync(f); } catch (_) {}
+      }
+      try { fs.rmdirSync(P.charDir(slug)); } catch (_) {}
+    }
+    for (const f of S.globalFiles()) {
       try { fs.unlinkSync(f); } catch (_) {}
     }
-    console.log('Save deleted. /hero init to start over.');
+    console.log(slugs.length > 1
+      ? `${slugs.length} characters deleted. /hero init to start over.`
+      : 'Save deleted. /hero init to start over.');
   },
 };
 
 const fn = commands[cmd];
 if (!fn) {
-  console.log('idle-claude-rpg — commands: init status zone shop inventory equip upgrade insight sell stats hud fold sim reset');
+  // One string literal, deliberately: test/skill.test.js reads the command list
+  // straight out of this line to prove every command is documented, and a
+  // concatenation would quietly hand it half the list.
+  console.log('idle-claude-rpg — commands: init status zone shop inventory equip upgrade insight sell stats hud roster switch delete fold sim reset');
   process.exit(cmd ? 1 : 0);
 }
 fn();

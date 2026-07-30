@@ -1,6 +1,6 @@
 ---
 name: hero
-description: idle-claude-rpg controls — init, status, shop, zone, inventory, equip, upgrade, sell, stats, hud. Use when the user types /hero or asks about their idle RPG hero, their loot, the monster in the statusline, or how the HUD is laid out.
+description: idle-claude-rpg controls — init, status, shop, zone, inventory, equip, upgrade, sell, stats, hud, roster, switch. Use when the user types /hero or asks about their idle RPG hero, their loot, the monster in the statusline, how the HUD is laid out, or about playing a second character.
 allowed-tools: Bash(node {{REPO}}/bin/rpg.js *)
 ---
 
@@ -51,7 +51,22 @@ Map the user's arguments directly onto it:
   it changes nothing but how the statusline draws, and `auto` undoes it. Pinning a layout wider than
   the terminal is allowed and warns; relay the warning with the rest of the output. Takes effect on
   the next statusline frame, so there is nothing to restart.
-- `/hero reset` → warn that this deletes the hero, and only run with `--confirm` after the user confirms
+- Several characters: `/hero roster` lists every hero on the machine with the active one
+  marked, and `/hero switch <n|id|name>` changes which one you are playing. Both are
+  immediate and neither is destructive — `switch` only moves a pointer, and nothing about
+  the hero you leave is touched. `/hero init` now **adds** a character rather than replacing
+  one, so a user asking to "try a Knight" wants `init`, not a reset.
+- Switching is machine-wide: every window on the machine follows from its next statusline
+  frame. Say so if the user has more than one open. The `IDLE_RPG_HERO` environment variable
+  pins one window to one hero for anyone who wants two at once, and the CLI prints a note
+  whenever it is set — relay that note.
+- `/hero delete [<n|id|name>]` deletes **one** character. **Two steps like bulk selling:**
+  run it without `--confirm` first, relay the preview naming the hero and level it would
+  take, then re-run with `--confirm` once the user says yes. With no argument it targets
+  the character being played.
+- `/hero reset` is the nuclear option — it deletes **every** character, not just the active
+  one. Warn in those words, point at `/hero delete` if they meant one hero, and only run
+  with `--confirm` after the user confirms.
 
 ## First-run init
 

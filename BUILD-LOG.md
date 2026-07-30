@@ -19,6 +19,81 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### The save was not the only hero (2026-07-30)
+
+- **The case, in one sentence: there are four classes and you only ever play
+  one.** Knight makes commits hit harder, Ranger turns lines of code into
+  damage, Wizard crits, Rogue farms — those genuinely change how *your work*
+  maps to the game, and trying a second one cost you the first. `init` refused
+  when a save existed unless you passed `--force`, whose help text was honest
+  about what it did: "this deletes your hero". A file-layout problem wearing a
+  game-design hat
+- **It absorbed two other backlog items whole.** Prestige, "switch character"
+  and "restart" are one feature — *the save is not the only hero*. Switch is a
+  pointer move, restart is "make a new one and keep the old", prestige is "make
+  a new one that inherits something". Building the roster made the other two
+  policies on top of a primitive that now exists; building prestige first would
+  have shipped the narrowest of the three plus a reset nobody asked for
+- **`characters/<slug>/` with the filenames unchanged inside it.** `state.json`,
+  `state.bak.{1..4}.json`, `state.corrupt-*.json`, `state.v*.json` and
+  `state.tmp.<pid>.json` all moved down one level and kept their names, so
+  `paths.js` gained one indirection and almost nothing in `state.js` changed —
+  the backup-generation walk, `reapOrphanTmp`'s pid regex and the spilled-file
+  filter all still work verbatim. The flat alternative
+  (`state.<slug>.bak.2.json`) would have made every one of those regexes
+  ambiguous for the sake of a shallower tree
+- **Slugs are generated, never derived from the hero's name.** Names are user
+  input — `sanitizeName` explicitly protects `勇者` and `Eva 🗡` — and a path
+  built from one hits filesystem-unsafe characters, macOS case-insensitive
+  collisions and length limits. `hero_<n>`, with the display name left inside
+  the save where it already was. The same `/^[A-Za-z0-9_-]{1,32}$/` is the
+  path-traversal guard on `$IDLE_RPG_HERO`, which is the one input to a path
+  segment here that comes from outside the game
+- **Resolution is cached per process, and that is what makes switching
+  instant.** The hook, the statusline and every CLI command are each a fresh
+  process, so a per-process cache costs one `readFileSync` and still swaps the
+  hero in every open HUD on its next frame, mid-animation
+- **What stayed global, which was the easy thing to get wrong.**
+  `events.ndjson` does not move: the hook appends work events without knowing
+  who is active and must stay that way, since it runs on every tool call and
+  cannot afford a load. Per-character inboxes would strand events on whoever
+  happened to be active when they were written. `state.lock` does not move
+  either — it serializes folds, and a fold now *reads* the active pointer before
+  it writes, so two folds for different characters would still race on that read
+- **Switching is machine-wide, and that is the direct cost of the property worth
+  keeping.** One save behind every repo and every window is why three windows
+  triple your tick rate. `IDLE_RPG_HERO` is the per-window override, which is
+  exactly the shape `$RPG_HUD` already has over the saved HUD pin — warning
+  included. Anyone who wants two heroes in two windows opts in; nobody else pays
+- **Migration moves `state.json` last, and the order is the whole design.**
+  Interrupted the other way round, the hero lands in the character directory
+  while its backup generations stay stranded at the top level with nothing left
+  to trigger a second attempt — and the backups are the entire recovery story.
+  Interrupted this way round, the top level still has `state.json`, so the next
+  process finishes the job into the *same* slug. Adoption hangs off the lazy
+  path resolver rather than an explicit `init()` call because it has to run
+  before the first read of a save path, and a call site that can be forgotten is
+  a call site that will be
+- **The destructive edges both changed wording in the same commit as
+  behaviour.** `init` is no longer destructive at all and has no `--force` path,
+  because that flag's only remaining meaning would be "delete the hero I am
+  about to stop using". `/hero delete` is that, and previews first like bulk
+  selling. `reset` is now explicitly every character — it says "all 3 of your
+  characters" and points at `delete` — because "this deletes your hero forever"
+  had quietly become true of a different, smaller command
+- **One thing genuinely breaks and is small enough to keep.** `state.repos` is
+  per-save and `gitwatch.sync` needs a previous value to compare against, so a
+  character who has never been played in a repo will not fire the War Horn on
+  its first push there. The fix would be a global repo map, which costs the "a
+  save is self-contained" property that makes backup and recovery
+  comprehensible. Noted in the README instead
+- **23 new tests, all through subprocesses.** In-process would have measured the
+  first cached answer forever, which is the same trap that caught the
+  `IDLE_RPG_HOME`-at-require-time work earlier. They cover adoption (including
+  the interrupted one, and a backup dropped back into the old location), the
+  env pin, traversal, the shared inbox paying whoever is on the clock, delete
+  vs reset scope, and every fail-open path a dangling pointer can take
+
 ### The game had no ending, and nobody had noticed (2026-07-30)
 
 - **Found by asking what happens after the last boss, not by playing to it.**

@@ -17,14 +17,19 @@ const C = require('../lib/content');
 const T0 = 1_700_000_000_000;
 
 beforeEach(() => {
-  for (const f of fs.readdirSync(HOME)) fs.unlinkSync(path.join(HOME, f));
+  // Recursive: the save now lives one level down, in the active character's
+  // directory, and the install root holds that directory plus the shared inbox.
+  for (const f of fs.readdirSync(HOME)) fs.rmSync(path.join(HOME, f), { recursive: true, force: true });
+  // Several tests below write a save file straight to disk to stage a corrupt
+  // or legacy one, which needs somewhere to write it to.
+  fs.mkdirSync(P.CHAR_DIR, { recursive: true });
 });
 
 test('save + load round-trips atomically (no tmp left behind)', () => {
   const s = E.newState('rogue', 'Atomic', T0);
   S.saveState(s);
   assert.ok(!fs.existsSync(P.tmpFile), 'tmp renamed away');
-  const leftovers = fs.readdirSync(HOME).filter(f => f.startsWith(P.tmpGlobPrefix));
+  const leftovers = fs.readdirSync(P.CHAR_DIR).filter(f => f.startsWith(P.tmpGlobPrefix));
   assert.deepStrictEqual(leftovers, [], 'no staging file left behind');
   const loaded = S.loadState();
   assert.strictEqual(loaded.hero.name, 'Atomic');
@@ -39,7 +44,7 @@ test('corrupt state falls back to backup, quarantines the bad file', () => {
   const loaded = S.loadState();
   assert.ok(loaded, 'recovered from bak');
   assert.strictEqual(loaded.hero.name, 'Backup');
-  assert.ok(fs.readdirSync(HOME).some(f => f.startsWith('state.corrupt-')), 'quarantined');
+  assert.ok(fs.readdirSync(P.CHAR_DIR).some(f => f.startsWith('state.corrupt-')), 'quarantined');
 });
 
 // ---- rolling backups ----
@@ -129,7 +134,7 @@ test('a reset takes every generation with it', () => {
   // `reset` promises "forever", so what it misses is a playable hero left on
   // disk after the player asked for one to be gone.
   for (const f of files) { try { fs.unlinkSync(f); } catch (_) { /* absent */ } }
-  const left = fs.readdirSync(HOME).filter(f => f.startsWith('state.'));
+  const left = fs.readdirSync(P.CHAR_DIR).filter(f => f.startsWith('state.'));
   assert.deepStrictEqual(left, [], `saves left behind: ${left}`);
 });
 
@@ -167,19 +172,19 @@ test('lock: a dead owner is stolen at once, a live one waits out the timeout', (
 
 test('orphaned staging files are reaped, live writers are left alone', () => {
   const dead = deadPid();
-  const f = pid => path.join(HOME, `state.tmp.${pid}.json`);
+  const f = pid => path.join(P.CHAR_DIR, `state.tmp.${pid}.json`);
   for (const pid of [dead, LIVE_FOREIGN_PID, process.pid]) fs.writeFileSync(f(pid), '{}');
-  fs.writeFileSync(path.join(HOME, 'state.tmp.notapid.json'), '{}');
+  fs.writeFileSync(path.join(P.CHAR_DIR, 'state.tmp.notapid.json'), '{}');
 
   S.reapOrphanTmp();
   assert.ok(!fs.existsSync(f(dead)), 'a crashed writer\'s staging file was left to rot');
   assert.ok(fs.existsSync(f(LIVE_FOREIGN_PID)), 'reaped a live process\'s staging file');
   assert.ok(fs.existsSync(f(process.pid)), 'reaped our own staging file mid-write');
-  assert.ok(fs.existsSync(path.join(HOME, 'state.tmp.notapid.json')), 'ate a file it cannot own');
+  assert.ok(fs.existsSync(path.join(P.CHAR_DIR, 'state.tmp.notapid.json')), 'ate a file it cannot own');
 });
 
 test('a fold reaps what a crash left behind', () => {
-  const orphan = path.join(HOME, `state.tmp.${deadPid()}.json`);
+  const orphan = path.join(P.CHAR_DIR, `state.tmp.${deadPid()}.json`);
   S.saveState(E.newState('wizard', 'Reaper', T0));
   fs.writeFileSync(orphan, '{}');
   assert.ok(S.tryFold(T0 + 1000));
@@ -281,7 +286,7 @@ test('unlocked saveState racing a locked fold never crashes or corrupts', () => 
     const st = S.loadState();
     assert.ok(st, 'state survived concurrent unlocked writers');
     assert.strictEqual(st.hero.name, 'Racer');
-    const leftovers = fs.readdirSync(HOME).filter(f => f.startsWith(P.tmpGlobPrefix));
+    const leftovers = fs.readdirSync(P.CHAR_DIR).filter(f => f.startsWith(P.tmpGlobPrefix));
     assert.deepStrictEqual(leftovers, [], 'no staging files left behind');
   });
 });
@@ -425,7 +430,7 @@ test('a migrated save keeps the original bytes under its old version', () => {
   const original = v1Save({ equipment: { weapon: v1Item('weapon', 'Runed Grove Wand', 8), armor: null, trinket: null } });
   const raw = JSON.stringify(original);
   fs.writeFileSync(P.stateFile, raw);
-  const snapshot = path.join(HOME, 'state.v1.json');
+  const snapshot = path.join(P.CHAR_DIR, 'state.v1.json');
 
   const st = S.loadState();
   assert.strictEqual(st.version, 2);
@@ -447,11 +452,11 @@ test('a migrated save keeps the original bytes under its old version', () => {
   // adds one for the version it is already at.
   S.loadState();
   assert.strictEqual(fs.readFileSync(snapshot, 'utf8'), raw);
-  assert.ok(!fs.existsSync(path.join(HOME, 'state.v2.json')), 'snapshotted a save that was never migrated');
+  assert.ok(!fs.existsSync(path.join(P.CHAR_DIR, 'state.v2.json')), 'snapshotted a save that was never migrated');
 });
 
 test('a save that is already current is loaded without a snapshot', () => {
   S.saveState(E.newState('wizard', 'Current', T0));
   assert.ok(S.loadState());
-  assert.deepStrictEqual(fs.readdirSync(HOME).filter(f => /^state\.v\d+\.json$/.test(f)), []);
+  assert.deepStrictEqual(fs.readdirSync(P.CHAR_DIR).filter(f => /^state\.v\d+\.json$/.test(f)), []);
 });

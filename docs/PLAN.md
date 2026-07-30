@@ -21,7 +21,7 @@ idle-claude-rpg/
 ├── statusline/rpg-statusline.js
 ├── bin/rpg.js                 # CLI: init/status/zone/shop/inventory/equip/sell/stats/fold/sim/reset
 ├── lib/
-│   ├── paths.js               # STATE_DIR=~/.config/idle-claude-rpg; IDLE_RPG_HOME env override for tests
+│   ├── paths.js               # STATE_DIR=~/.config/idle-claude-rpg + characters/<slug>/; IDLE_RPG_HOME and IDLE_RPG_HERO env overrides
 │   ├── state.js               # load/save (tmp+rename), lockfile, migrations, corrupt recovery
 │   ├── classify.js            # hook payload → game event (pure, table-driven, unit-tested)
 │   ├── engine.js              # fold(events, state, now): combat, kills, levelups, loot, offline
