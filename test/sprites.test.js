@@ -136,19 +136,45 @@ test('every class scripts its own attack', () => {
   }
 });
 
-// A hit can start while the previous one is still fading, and between blows the
-// layout assumes the hero is standing where it says it is. Both hold only if
-// every script begins and ends at rest.
-test('every attack script opens and closes at rest on the hero mark', () => {
+// Between blows the layout assumes the hero is standing where it says it is, and
+// that holds only if every script ends at rest: the anim expires, the renderer
+// falls back to the idle art on its mark, and nothing snaps because the last
+// frame drawn was already there.
+//
+// The *opening* frame is the mirror of that and is deliberately not required to
+// match. It was, once, and it cost a full sample at the front of every blow —
+// the one sample a statusline-folded hit is guaranteed to draw (see `BLOW_MS`).
+// Nothing was relying on it: `engine.enqueue` serialises anims, so a blow never
+// starts on top of one that is still playing. So the assertion runs the other
+// way now — a script that opens at rest is a script that wastes its first frame.
+test('every attack script closes at rest on the hero mark, and opens on a pose', () => {
   for (const [cls, a] of Object.entries(S.attacks)) {
-    for (const [when, f] of [['opens', a.frames[0]], ['closes', a.frames[a.frames.length - 1]]]) {
-      assert.strictEqual(f.pose, null, `${cls}: ${when} on a pose instead of the idle art`);
-      assert.strictEqual(f.back, 0, `${cls}: ${when} ${f.back} cells off its mark`);
-      assert.strictEqual(f.fly, null, `${cls}: ${when} with a projectile already in the gap`);
-    }
+    const close = a.frames[a.frames.length - 1];
+    assert.strictEqual(close.pose, null, `${cls}: closes on a pose instead of the idle art`);
+    assert.strictEqual(close.back, 0, `${cls}: closes ${close.back} cells off its mark`);
+    assert.strictEqual(close.fly, null, `${cls}: closes with a projectile still in the gap`);
+
+    const open = a.frames[0];
+    assert.ok(open.pose, `${cls}: opens on the idle art — the first frame of the blow draws nothing`);
+
     assert.ok(a.frames.some(f => f.back > 0), `${cls}: the hero never moves at all`);
     assert.ok(a.frames.some(f => f.pose), `${cls}: the hero never changes pose`);
   }
+});
+
+// The same rule from the renderer's end, and the one that actually failed in
+// play: a push detected by `gitwatch` is folded *by the statusline*, so the blow
+// is queued and drawn in one pass with no time in between. Whatever `elapsed = 0`
+// resolves to is the only frame some blows ever get.
+test('a blow drawn the instant it is queued is already mid-swing', () => {
+  assert.strictEqual(S.beatAt(0), 0, 'the beat clock does not start at the first frame');
+  for (const cls of Object.keys(S.attacks)) {
+    const first = S.attackFrame(cls, S.beatAt(0));
+    assert.notDeepStrictEqual(first.art, S.bigHero(cls),
+      `${cls}: a blow rendered at elapsed 0 draws the idle art`);
+  }
+  const m = S.monsterAttackFrame(S.beatAt(0), 'nothing-with-a-depth');
+  assert.ok(m.shove !== 0, 'the monster stands still on the frame its own blow is queued');
 });
 
 test('a projectile only ever travels forward, and starts short of the target', () => {
@@ -206,19 +232,15 @@ test('no attack script runs past the animation it plays over', () => {
 // restatement of the table, but that the *posed* frames own the blow. A third
 // was the old number and it was too little; two thirds is a floor that leaves
 // room to retime without leaving room to regress.
-test('the posed frames own most of the blow', () => {
-  const posed = S.BLOW_MS.reduce((sum, ms, i) =>
-    sum + (i === 0 || i === S.BEATS - 1 ? 0 : ms), 0);
+test('the posed frames own almost all of the blow', () => {
+  // Only the closing frame is at rest now, so this is a much tighter bound than
+  // the two-thirds the six-frame version could manage. The rest frame has one
+  // job — be the mark the sprite is standing on when the anim expires — and it
+  // needs no more time on screen than it takes to be true.
+  const posed = S.BLOW_MS.slice(0, -1).reduce((a, b) => a + b, 0);
   const total = S.beatMs(S.BEATS);
-  assert.ok(posed / total >= 2 / 3,
+  assert.ok(posed / total >= 0.9,
     `only ${Math.round(100 * posed / total)}% of the blow is posed`);
-  // And the opening frame in particular, because it is the one the redraw
-  // *caused by* the blow lands in: the hook folds and queues the anim, and the
-  // statusline redraw that follows was logged 155-385ms behind it. An opening
-  // frame longer than that window puts the hero at rest on the one redraw the
-  // player is most likely to be looking at.
-  assert.ok(S.BLOW_MS[0] <= 150,
-    `a ${S.BLOW_MS[0]}ms opening frame swallows the redraw the blow itself triggers`);
 });
 
 // Frame indices are the currency everywhere else — `hitFrame`, the flinch's age,
@@ -261,13 +283,17 @@ test('every scripted attack frame names a pose its class actually has', () => {
 // there is instead is a set of invariants the hero's four scripts each get
 // checked against individually, and which this one has to satisfy alone.
 
-test('the monster opens and closes its swing on its own mark', () => {
+test('the monster closes its swing on its own mark, and opens already winding up', () => {
   const f = S.monsterAttack.frames;
-  for (const [when, fr] of [['opens', f[0]], ['closes', f[f.length - 1]]]) {
-    assert.strictEqual(fr.shove, 0, `${when} ${fr.shove} cells off its mark`);
-    assert.strictEqual(fr.hero, 0, `${when} with the hero already driven back`);
-    assert.strictEqual(fr.fly, null, `${when} with a blow already in the gap`);
-  }
+  const close = f[f.length - 1];
+  assert.strictEqual(close.shove, 0, `closes ${close.shove} cells off its mark`);
+  assert.strictEqual(close.hero, 0, 'closes with the hero still driven back');
+  assert.strictEqual(close.fly, null, 'closes with a blow still in the gap');
+  // Same rule as the hero's scripts: the opening frame is the one a
+  // statusline-folded blow is guaranteed to draw, so it may not be a frame of
+  // the monster standing still. It opens on the heel instead.
+  assert.ok(f[0].shove !== 0, 'opens standing still — the first frame of the blow draws nothing');
+  assert.strictEqual(f[0].hero, 0, 'opens with the hero already driven back');
   assert.ok(f.some(fr => fr.shove > 0), 'the monster never comes forward at all');
   assert.ok(f.some(fr => fr.shove < 0), 'the monster swings with no wind-up');
   assert.strictEqual(S.MONSTER_FLINCH[S.MONSTER_FLINCH.length - 1].shove, 0,
@@ -368,7 +394,7 @@ test('a scaled swing obeys every rule the shared script does', () => {
   for (const id of Object.keys(S.BOSS_SWING)) {
     const fs = base.map((_, i) => S.monsterAttackFrame(i, id));
     const where = what => `${id}: ${what}`;
-    assert.strictEqual(fs[0].shove, 0, where('opens off its mark'));
+    assert.strictEqual(fs[0].shove, base[0].shove, where('opens somewhere the shared script does not'));
     assert.strictEqual(fs[fs.length - 1].shove, 0, where('closes off its mark'));
     assert.strictEqual(fs[0].hero, 0, where('opens with the hero already driven back'));
     assert.strictEqual(fs[fs.length - 1].hero, 0, where('closes with the hero still back'));

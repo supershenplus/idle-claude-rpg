@@ -57,9 +57,32 @@ is in `docs/PLAN.md`.
 - **What the tests hold now that a quotient no longer does.** "The script fits its
   animation" became a comparison of the grid's own total against the anim's
   duration, because a script can now overrun by being slow as well as by having
-  too many frames. Added: the posed frames must own ≥⅔ of a blow, the opening
-  frame must be ≤150ms (the floor of that measured 155-385ms window), and the beat
+  too many frames. Added: the posed frames must own most of a blow, and the beat
   clock must round-trip index → ms → index at both ends of every frame
+- **Then a `git push` landed and drew nothing, which found the sharper version of
+  the same bug.** The push registered — "WAR HORN! git push" in the ticker, a Bat
+  Swarm dead behind it — so the blow happened and only the animation was missed.
+  The reason is that a push made outside Claude's tools fires no hook: it is found
+  by `gitwatch` polling *inside the statusline's own fold*. So the process that
+  queues the blow is the process that draws it, with no time in between, and the
+  first frame it renders is at **`elapsed = 0`** — which was the at-rest frame by
+  construction. Weighting the grid could not help; 100ms of nothing is still the
+  whole of the first draw. The same applies to any event the hook handed over
+  because the lock was busy, since `tryFold` is non-blocking on both ends
+- **So the opening rest frame is gone from all five scripts, and nothing needed
+  it.** The invariant it was serving — "a hit that starts while another is still
+  fading never teleports the sprite" — was never at risk: `engine.enqueue`
+  serialises anims, starting each where the last ended, so a blow cannot begin on
+  top of one still playing. Closing at rest is the half that earns its place (the
+  anim expires, the renderer falls back to idle art on the mark, nothing snaps);
+  opening at rest was its mirror image, kept for symmetry, and it cost a full
+  sample at the front of every blow. Scripts now open on their wind-up, `hitFrame`
+  moves 3 → 2, and the grid is `[400, 400, 350, 300, 50]` — still 1500ms, and the
+  damage still lands at 800ms, so nothing about the timing of the hit moved
+- **Dead art is now 50ms of 1500 (3%), against 500ms (33%) before the day
+  started.** The test that used to require every script to open *and* close at
+  rest now requires the opposite at the opening end, plus a renderer-level one:
+  every class, drawn at `elapsed = 0`, must not be showing its idle art
 
 ### Big blows throw a volley (2026-07-30)
 

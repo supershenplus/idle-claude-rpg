@@ -248,8 +248,9 @@ const MOB = { id: 'kobold', name: 'Kobold Scrapper', sprite: '(x)', level: 8, is
 function renderHit(cols, data) {
   return renderAnim(cols, (st, now) => {
     st.monster = { ...BOSS };
-    // Far enough into the anim that the damage number has appeared (frame >= 2).
-    st.anim = [{ type: 'hit', at: now - sprites.beatMs(4), dur: 1500, data }];
+    // Far enough into the anim that the damage number has appeared, and not so
+    // far that the script has closed back onto its mark.
+    st.anim = [{ type: 'hit', at: now - sprites.beatMs(sprites.hitFrame('ranger')), dur: 1500, data }];
   });
 }
 
@@ -320,8 +321,11 @@ for (const cols of [100, 76, 60]) {
   for (const [cls, grip] of Object.entries(GRIP)) {
     test(`the ${cls} is shoved off its mark and recovers at ${cols} columns`, () => {
       const script = sprites.attacks[cls].frames;
-      // Frame 0 is the idle art — the hero's home column.
-      const home = columnOf(atFrame(cols, 0, {}, cls), grip);
+      // The *last* frame is the idle art — the hero's home column. It used to be
+      // the first one, until the opening rest frame was dropped for costing a
+      // sample at the front of every blow (`sprites.BLOW_MS`); a script closes on
+      // its mark and no longer opens on it, so that is the end to measure from.
+      const home = columnOf(atFrame(cols, script.length - 1, {}, cls), grip);
       const moved = script.map((_, i) => home - columnOf(atFrame(cols, i, {}, cls), grip));
       assert.deepStrictEqual(moved, script.map(f => f.back),
         `recoil does not match the script — clamped against the left edge at ${cols} columns?`);
@@ -566,7 +570,7 @@ test('a coalesced hit cannot shove the compact monster off its centre', () => {
   const compactColumn = (data) => {
     const out = renderAnim(60, (st, now) => {
       st.monster = { ...BOSS, sprite: SIGIL };
-      st.anim = [{ type: 'hit', at: now - sprites.beatMs(4), dur: 1500, data }];
+      st.anim = [{ type: 'hit', at: now - sprites.beatMs(sprites.hitFrame('ranger')), dur: 1500, data }];
     });
     const scene = out.split('\n').map(R.visible).find(l => l.includes(SIGIL));
     assert.ok(scene, 'the monster is not on screen');
@@ -615,7 +619,10 @@ function monsterShove(out, home, mon = BOSS) {
 for (const cols of [100, 76, 60]) {
   for (const mon of [BOSS, MOB]) {
     test(`the ${mon.id} winds up, lunges and returns to its mark at ${cols} columns`, () => {
-      const home = atMonsterFrame(cols, 0, {}, undefined, mon);
+      // The last frame, not the first: the monster's script closes on its mark
+      // and opens already rocked back onto its heel, for the same reason the
+      // hero's does (`sprites.BLOW_MS`).
+      const home = atMonsterFrame(cols, sprites.monsterAttack.frames.length - 1, {}, undefined, mon);
       const moved = sprites.monsterAttack.frames
         .map((_, i) => monsterShove(atMonsterFrame(cols, i, {}, undefined, mon), home, mon));
       // Against its *own* script, not the shared one: `rootfang` has a depth in
