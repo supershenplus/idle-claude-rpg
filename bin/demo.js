@@ -36,7 +36,10 @@ const sprites = require('../lib/sprites');
 // flash all wait for that frame — so this is the earliest one where a hit scene
 // shows everything a hit does.
 const FRAME = 3;
-const AGO = FRAME * sprites.FRAME_MS;
+// Off the weighted grid, not a multiple of the flat tick: the frames of a blow
+// are no longer the same length as each other (`sprites.BLOW_MS`), so the only
+// way to name frame 3 is to ask where it starts.
+const AGO = sprites.beatMs(FRAME);
 
 function monster(zoneId, monsterId, level, hpFrac) {
   const zone = C.zoneById(zoneId);

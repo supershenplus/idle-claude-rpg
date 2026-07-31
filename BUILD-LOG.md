@@ -19,6 +19,48 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### The blow spends its time where it can be seen (2026-07-31)
+
+- **Started as "attack animations don't always render, sometimes not at all",
+  and this time the cause was measured rather than reasoned about.** Logging
+  `Date.now()` at the top of the statusline gave two different redraw rates:
+  ~12/second while a tool was streaming output, and a flat **1.0s tick** (in
+  pairs about 40ms apart) the rest of the time. The quiet cadence is the one that
+  decides whether a hit is seen, because that is when a blow is alone on screen —
+  and at one redraw a second a 1500ms hit is sampled **once or twice, never more**
+- **On a flat 250ms grid, a third of those samples were guaranteed to show
+  nothing.** Frames 0 and 5 of every script are the at-rest frame — `pose: null`,
+  `back: 0`, `fly: null` — because a script has to open and close on the hero's
+  mark. Six equal frames put 500ms of a 1500ms blow on art that is identical to
+  standing still. A second log, of what the renderer actually drew, confirmed it
+  from the other end: of 16 renders that caught a live hit, 5 were on frame 0 or 5
+- **And the miss was biased, not random, which is what made it read as a bug.**
+  A tool finishing triggers a redraw, and it is the same event that makes the hook
+  fold and queue the blow. Those event-driven redraws were logged at 155, 174,
+  205, 212, 289, 328 and 385ms behind the anim's own timestamp — every one inside
+  a 250ms opening frame. **The redraw caused by the blow was the one guaranteed to
+  draw the hero standing still**
+- **So the frames are weighted instead of flat** (`sprites.BLOW_MS` =
+  `[100, 350, 350, 350, 300, 50]`). The rest frames keep their place — the
+  invariant is that a script opens and closes on the mark, not that it lingers
+  there — and the four posed frames take the 500ms they release. Dead art falls
+  from 33% to 10%, and all seven of the measured event-driven redraws now land on
+  the wind-up. Nothing else moved: still six frames, still 1500ms, still
+  `hitFrame: 3`, which now begins at 800ms against 750
+- **The two clocks came apart in the renderer, which is the real structural
+  change.** `frame` stays the flat 250ms tick and drives everything that *blinks*
+  — the banners, the red wash on a hurt sprite — because a blink is a rate rather
+  than a choreography and every anim type has one, including the ten-second
+  banners with no script at all. `beat` is which frame of a *blow* is on screen,
+  and only `hit` and `mhit` have one. Frame indices are unchanged by the split, so
+  `hitFrame`, `MONSTER_HIT_FRAME` and the flinch's age all still work in frames
+- **What the tests hold now that a quotient no longer does.** "The script fits its
+  animation" became a comparison of the grid's own total against the anim's
+  duration, because a script can now overrun by being slow as well as by having
+  too many frames. Added: the posed frames must own ≥⅔ of a blow, the opening
+  frame must be ≤150ms (the floor of that measured 155-385ms window), and the beat
+  clock must round-trip index → ms → index at both ends of every frame
+
 ### Big blows throw a volley (2026-07-30)
 
 - **Started as "I'm not seeing an attack animation for wizard", which was three

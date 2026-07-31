@@ -24,12 +24,12 @@ const HERO_GAP = 14;   // cells between hero art and monster art
 const LEFT_MIN = 2;
 
 function main(stdin) {
-  // Which frame of an animation gets drawn is `(now - anim.at) / FRAME_MS`, so
+  // Which frame of an animation gets drawn is a function of `now - anim.at`, so
   // a caller that wants a *named* frame has to name the clock too: this process
-  // takes about 90ms to start, which is over a third of a 250ms frame, and the
-  // anim was timestamped before the spawn. Under load that gap crosses a frame
-  // boundary and the scene drawn is not the one asked for. $RPG_NOW pins the
-  // clock so the answer stops depending on how busy the machine is.
+  // takes about 90ms to start, which is most of the opening frame of a blow, and
+  // the anim was timestamped before the spawn. Under load that gap crosses a
+  // frame boundary and the scene drawn is not the one asked for. $RPG_NOW pins
+  // the clock so the answer stops depending on how busy the machine is.
   //
   // Deliberately not used for the fold below, which keeps the real clock: the
   // fold turns elapsed time into kills and writes them, so the worst a bogus
@@ -97,7 +97,21 @@ function main(stdin) {
 
   // ---- active animation ----
   const anim = (state.anim || []).find(a => now >= a.at && now < a.at + a.dur);
-  const frame = anim ? Math.floor((now - anim.at) / sprites.FRAME_MS) : 0;
+  const elapsed = anim ? now - anim.at : 0;
+  // Two clocks, because the scene has two kinds of moving part and they want
+  // different grids. `frame` is the flat 250ms tick, and it drives everything
+  // that blinks: the banners, the red wash on a hurt sprite. A blink is a rate
+  // rather than a choreography, so it should not speed up and slow down with the
+  // frames of a blow — and every anim type has one, including the ten-second
+  // banners that have no script at all.
+  //
+  // `beat` is which frame of a *blow* is on screen, off the weighted grid in
+  // `sprites.BLOW_MS`. Only `hit` and `mhit` have one. See the comment on
+  // BLOW_MS for why the two came apart: a flat grid spent a third of every blow
+  // on the at-rest frames, which at one redraw a second is a third of all the
+  // hits you ever see rendering as no animation at all.
+  const frame = Math.floor(elapsed / sprites.FRAME_MS);
+  const beat = sprites.beatAt(elapsed);
 
   // A kill swaps `state.monster` immediately, but the animations about that kill
   // play afterwards, so they carry their own copy of the monster they concern
@@ -187,12 +201,12 @@ function main(stdin) {
   // A class may script its attack (see sprites.attacks): a pose to hold, a
   // recoil, and where its projectile has got to this frame. Classes without one
   // get `null` here and keep the generic mark that grows out of the gap.
-  const atk = anim && anim.type === 'hit' ? sprites.attackFrame(h.class, frame) : null;
+  const atk = anim && anim.type === 'hit' ? sprites.attackFrame(h.class, beat) : null;
   // The monster's own blow (`sprites.monsterAttack`), which has no class and no
   // pose art — one displacement per frame, applied to whichever of the 28
   // sprites happens to be standing there. It drives the hero back too, so the
   // recoil field is shared: on any given frame at most one of the two is live.
-  const mAtk = anim && anim.type === 'mhit' ? sprites.monsterAttackFrame(frame, mon.id) : null;
+  const mAtk = anim && anim.type === 'mhit' ? sprites.monsterAttackFrame(beat, mon.id) : null;
   const recoil = atk ? atk.back : (mAtk ? mAtk.hero : 0);
 
   // Bosses swing deeper than the shared script (sprites.BOSS_SWING), and the
@@ -208,8 +222,8 @@ function main(stdin) {
   // step with a class that lands on a different one, and confined to `hit`
   // anims — the corpse the kill swaps in must not be seen flinching.
   const hitLandsOn = sprites.hitFrame(h.class);
-  const struck = anim && anim.type === 'hit' && frame >= hitLandsOn
-    ? sprites.monsterFlinchFrame(frame - hitLandsOn)
+  const struck = anim && anim.type === 'hit' && beat >= hitLandsOn
+    ? sprites.monsterFlinchFrame(beat - hitLandsOn)
     : null;
   // Positive is toward the hero. A flinch belongs to the hero's hit anim and a
   // lunge to the monster's own, so this is a sum of one term either way — but
@@ -237,10 +251,10 @@ function main(stdin) {
   // for the whole of a death. Alternating two reds rather than holding one:
   // the HUD is redrawn about once a second, so a viewer sees isolated frames,
   // and a flat wash would be indistinguishable from a hero who simply is red.
-  const landedOn = anim && anim.type === 'hit' && frame >= hitLandsOn;
+  const landedOn = anim && anim.type === 'hit' && beat >= hitLandsOn;
   // The unprovoked blow reddens the hero on exactly the same terms: from the
   // frame it lands, which is also the frame its figure appears in the gap.
-  const struckHero = !!anim && anim.type === 'mhit' && frame >= sprites.MONSTER_HIT_FRAME;
+  const struckHero = !!anim && anim.type === 'mhit' && beat >= sprites.MONSTER_HIT_FRAME;
   const hurt = !!anim
     && (anim.type === 'death' || (landedOn && anim.data.counter > 0) || struckHero);
 
@@ -304,7 +318,7 @@ function main(stdin) {
       flightCol = head;
       flight = R.fit(sprites.MONSTER_PROJ + sprites.MONSTER_TRAIL.repeat(tail), cells - head);
     }
-    const dmg = frame >= sprites.MONSTER_HIT_FRAME
+    const dmg = beat >= sprites.MONSTER_HIT_FRAME
       ? R.c('brightRed', R.fit(`♥-${num(anim.data.dmg, cells - 2)}`, cells))
       : '';
     return { flight, flightCol, dmg, counter: '' };
@@ -317,7 +331,7 @@ function main(stdin) {
     let flightCol = 0;
     let flight = '';
     if (!atk) {
-      const travel = Math.min(gap - 4, frame * 3);
+      const travel = Math.min(gap - 4, beat * 3);
       flight = R.fit(heroArt.trail.repeat(Math.min(3, travel + 1)) + heroArt.proj, cells);
     } else if (atk.fly != null) {
       // The head travels the gap less its own width, so a projectile wider than
@@ -344,7 +358,7 @@ function main(stdin) {
         flight = R.fit(heroArt.trail.repeat(tail) + heroArt.proj, cells - flightCol);
       }
     }
-    const landed = frame >= hitLandsOn;
+    const landed = beat >= hitLandsOn;
     const dmg = landed
       ? R.c(d.crit ? 'brightRed' : 'brightYellow',
         R.fit(`✦-${num(d.dmg, cells - (d.crit ? 3 : 2))}${d.crit ? '!' : ''}`, cells))

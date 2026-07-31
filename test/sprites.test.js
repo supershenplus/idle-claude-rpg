@@ -176,7 +176,11 @@ test('every projectile and trail is a single cell', () => {
 });
 
 // Frames past the end of the hit are dead art: `attackFrame` clamps to the last
-// entry, so anything beyond the animation's own length simply never draws.
+// entry, so anything beyond the animation's own length simply never draws. The
+// grid is weighted rather than flat (`S.BLOW_MS`), so this is a comparison of
+// the script's own total against the anim's duration rather than a frame count
+// against a quotient — a script can now overrun by being *slow* as well as by
+// having too many frames, and only the total catches both.
 test('no attack script runs past the animation it plays over', () => {
   const E = require('../lib/engine');
   const st = E.newState('wizard', 'Fixture', 1);
@@ -184,11 +188,52 @@ test('no attack script runs past the animation it plays over', () => {
   E.dealDamage(st, 1, {}, () => 0.99, 1);      // 0.99: no crit, no retaliation
   const hit = st.anim.find(a => a.type === 'hit');
   assert.ok(hit, 'the engine no longer queues a hit anim');
-  const budget = Math.ceil(hit.dur / S.FRAME_MS);
+  assert.ok(S.beatMs(S.BEATS) <= hit.dur,
+    `the blow grid runs ${S.beatMs(S.BEATS)}ms against a ${hit.dur}ms hit`);
   for (const [cls, a] of Object.entries(S.attacks)) {
-    assert.ok(a.frames.length <= budget,
-      `${cls}: ${a.frames.length} frames for a ${hit.dur}ms hit — the last ${a.frames.length - budget} never draw`);
+    assert.strictEqual(a.frames.length, S.BEATS,
+      `${cls}: ${a.frames.length} frames against a ${S.BEATS}-frame grid — the odd ones have no duration`);
   }
+});
+
+// The weighting exists because the at-rest frames were eating the blow. Every
+// script has to open and close on the hero's mark, and on the old flat 250ms
+// grid that cost 500ms of a 1500ms hit — a third of it drawn identically to a
+// hero standing still. At the ~1 redraw per second the statusline was measured
+// at, that is a third of every hit you ever see rendering as no animation.
+//
+// So the property worth holding is not "the rest frames are short", which is a
+// restatement of the table, but that the *posed* frames own the blow. A third
+// was the old number and it was too little; two thirds is a floor that leaves
+// room to retime without leaving room to regress.
+test('the posed frames own most of the blow', () => {
+  const posed = S.BLOW_MS.reduce((sum, ms, i) =>
+    sum + (i === 0 || i === S.BEATS - 1 ? 0 : ms), 0);
+  const total = S.beatMs(S.BEATS);
+  assert.ok(posed / total >= 2 / 3,
+    `only ${Math.round(100 * posed / total)}% of the blow is posed`);
+  // And the opening frame in particular, because it is the one the redraw
+  // *caused by* the blow lands in: the hook folds and queues the anim, and the
+  // statusline redraw that follows was logged 155-385ms behind it. An opening
+  // frame longer than that window puts the hero at rest on the one redraw the
+  // player is most likely to be looking at.
+  assert.ok(S.BLOW_MS[0] <= 150,
+    `a ${S.BLOW_MS[0]}ms opening frame swallows the redraw the blow itself triggers`);
+});
+
+// Frame indices are the currency everywhere else — `hitFrame`, the flinch's age,
+// every test below that asks for "frame 3" — so the two directions have to agree
+// or a caller that converts one way and compares the other silently slips a
+// frame. Checked at the start of each frame and just inside its end, which are
+// the two places rounding could put it on a neighbour.
+test('the beat clock round-trips between frame index and elapsed time', () => {
+  for (let i = 0; i < S.BEATS; i++) {
+    assert.strictEqual(S.beatAt(S.beatMs(i)), i, `frame ${i} does not start where it says`);
+    assert.strictEqual(S.beatAt(S.beatMs(i + 1) - 1), i, `frame ${i} does not run to its end`);
+  }
+  assert.strictEqual(S.beatAt(-50), 0, 'a blow drawn before it starts is not at rest');
+  assert.strictEqual(S.beatAt(S.beatMs(S.BEATS) + 5000), S.BEATS - 1,
+    'a blow drawn past its end does not hold its last frame');
 });
 
 test('every scripted attack frame names a pose its class actually has', () => {
@@ -287,11 +332,12 @@ test('neither monster script runs past the animation it plays over', () => {
   E.monsterStrikes(st, 5, 1);
   const blow = st.anim.find(a => a.type === 'mhit');
   assert.ok(blow, 'the engine no longer queues a frame for an unprovoked blow');
-  const budget = Math.ceil(blow.dur / S.FRAME_MS);
-  assert.ok(S.monsterAttack.frames.length <= budget,
-    `${S.monsterAttack.frames.length} frames for a ${blow.dur}ms blow`);
+  assert.ok(S.beatMs(S.BEATS) <= blow.dur,
+    `the blow grid runs ${S.beatMs(S.BEATS)}ms against a ${blow.dur}ms blow`);
+  assert.strictEqual(S.monsterAttack.frames.length, S.BEATS,
+    `${S.monsterAttack.frames.length} frames against a ${S.BEATS}-frame grid`);
   for (const cls of Object.keys(S.attacks)) {
-    assert.ok(S.hitFrame(cls) + S.MONSTER_FLINCH.length <= budget,
+    assert.ok(S.hitFrame(cls) + S.MONSTER_FLINCH.length <= S.BEATS,
       `the ${cls} lands on frame ${S.hitFrame(cls)}, leaving no room for the flinch`);
   }
 });

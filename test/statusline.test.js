@@ -249,7 +249,7 @@ function renderHit(cols, data) {
   return renderAnim(cols, (st, now) => {
     st.monster = { ...BOSS };
     // Far enough into the anim that the damage number has appeared (frame >= 2).
-    st.anim = [{ type: 'hit', at: now - 4 * sprites.FRAME_MS, dur: 1500, data }];
+    st.anim = [{ type: 'hit', at: now - sprites.beatMs(4), dur: 1500, data }];
   });
 }
 
@@ -303,7 +303,7 @@ function columnOf(out, needle) {
 function atFrame(cols, frame, data, cls, mon = BOSS) {
   return renderAnim(cols, (st, now) => {
     st.monster = { ...mon };
-    st.anim = [{ type: 'hit', at: now - frame * sprites.FRAME_MS, dur: 1500,
+    st.anim = [{ type: 'hit', at: now - sprites.beatMs(frame), dur: 1500,
       data: { dmg: 38, crit: false, counter: 0, ...data } }];
   }, 'big', cls);
 }
@@ -403,7 +403,7 @@ test('the compact HUD flashes too', () => {
   const landed = sprites.hitFrame('ranger');
   const compact = (data) => renderAnim(60, (st, now) => {
     st.monster = { ...BOSS };
-    st.anim = [{ type: 'hit', at: now - landed * sprites.FRAME_MS, dur: 1500,
+    st.anim = [{ type: 'hit', at: now - sprites.beatMs(landed), dur: 1500,
       data: { dmg: 38, crit: false, ...data } }];
   }, 'compact');
   const sceneLine = out => out.split('\n').find(l => R.visible(l).includes(sprites.heroes.ranger.idle));
@@ -502,7 +502,7 @@ test('the compact HUD moves the hero out of the way', () => {
   // the hero being somewhere else, and ghosted.
   const compact = (data) => renderAnim(60, (st, now) => {
     st.monster = { ...BOSS };
-    st.anim = [{ type: 'hit', at: now - sprites.hitFrame('ranger') * sprites.FRAME_MS,
+    st.anim = [{ type: 'hit', at: now - sprites.beatMs(sprites.hitFrame('ranger')),
       dur: 1500, data: { dmg: 38, crit: false, ...data } }];
   }, 'compact');
   const columnOfHero = out => {
@@ -566,7 +566,7 @@ test('a coalesced hit cannot shove the compact monster off its centre', () => {
   const compactColumn = (data) => {
     const out = renderAnim(60, (st, now) => {
       st.monster = { ...BOSS, sprite: SIGIL };
-      st.anim = [{ type: 'hit', at: now - 4 * sprites.FRAME_MS, dur: 1500, data }];
+      st.anim = [{ type: 'hit', at: now - sprites.beatMs(4), dur: 1500, data }];
     });
     const scene = out.split('\n').map(R.visible).find(l => l.includes(SIGIL));
     assert.ok(scene, 'the monster is not on screen');
@@ -594,7 +594,7 @@ test('a coalesced hit cannot shove the compact monster off its centre', () => {
 function atMonsterFrame(cols, frame, data, cls, mon = BOSS) {
   return renderAnim(cols, (st, now) => {
     st.monster = { ...mon };
-    st.anim = [{ type: 'mhit', at: now - frame * sprites.FRAME_MS, dur: 1500,
+    st.anim = [{ type: 'mhit', at: now - sprites.beatMs(frame), dur: 1500,
       data: { dmg: 46, name: mon.name, ...data } }];
   }, 'big', cls);
 }
@@ -715,7 +715,7 @@ test('a monster with no big art can still be struck', () => {
   // spaces that nothing downstream will strip either.
   const out = renderAnim(100, (st, now) => {
     st.monster = { id: 'notamonster', name: 'Unknown', sprite: '(?)', level: 3, hp: 40, maxHp: 40 };
-    st.anim = [{ type: 'hit', at: now - sprites.hitFrame('ranger') * sprites.FRAME_MS,
+    st.anim = [{ type: 'hit', at: now - sprites.beatMs(sprites.hitFrame('ranger')),
       dur: 1500, data: { dmg: 38, crit: false, counter: 0 } }];
   });
   assert.ok(out.includes('(?)'), 'the fallback sprite is not on screen');
@@ -799,7 +799,7 @@ test('the compact HUD hangs the monster\'s mark from the monster', () => {
   // the hero, the head sits against the hero a frame before it is even thrown.
   const compact = f => renderAnim(60, (st, now) => {
     st.monster = { ...BOSS, sprite: '(#)' };
-    st.anim = [{ type: 'mhit', at: now - f * sprites.FRAME_MS, dur: 1500,
+    st.anim = [{ type: 'mhit', at: now - sprites.beatMs(f), dur: 1500,
       data: { dmg: 46, name: BOSS.name } }];
   }, 'compact');
   //
@@ -903,7 +903,7 @@ const sleep = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0,
 function saveScene(anchor, frame) {
   const st = E.newState('ranger', 'Testfixture', anchor);
   st.monster = { ...BOSS };
-  st.anim = [{ type: 'hit', at: anchor - frame * sprites.FRAME_MS, dur: 1500,
+  st.anim = [{ type: 'hit', at: anchor - sprites.beatMs(frame), dur: 1500,
     data: { dmg: 38, crit: false, counter: 0 } }];
   S.saveState(st);
 }
@@ -942,7 +942,7 @@ test('the pinned clock is what picks the frame, not the wall clock', () => {
   saveScene(anchor, 0);
   const early = drawAt(anchor);
   saveScene(anchor, 0);
-  const late = drawAt(anchor + sprites.hitFrame('ranger') * sprites.FRAME_MS);
+  const late = drawAt(anchor + sprites.beatMs(sprites.hitFrame('ranger')));
   assert.doesNotMatch(R.visible(early), /✦-38/, 'the blow landed before it was thrown');
   assert.match(R.visible(late), /✦-38/, 'winding the clock forward did not advance the frame');
 });
@@ -1026,7 +1026,7 @@ test('a repeat clear counts itself, and a first one does not', () => {
 // to borrow from `crit` to get, so the two biggest blows in the game drew exactly
 // the same mark as a jab.
 test('a big blow throws a volley, an ordinary one throws a single mark', () => {
-  const at = cls => sprites.hitFrame(cls) * sprites.FRAME_MS;
+  const at = cls => sprites.beatMs(sprites.hitFrame(cls));
   const shot = (cls, big) => renderAnim(100, (st, now) => {
     st.anim = [{ type: 'hit', at: now - at(cls), dur: 1500, data: { dmg: 90, crit: false, big } }];
   }, 'big', cls);
