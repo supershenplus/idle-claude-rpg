@@ -585,10 +585,11 @@ literally immune, while an under-geared one ate the entire curve.)
 ## Dev
 
 ```sh
-node --test 'test/*.test.js'      # 399 tests incl. concurrency stress
+node --test 'test/*.test.js'      # 411 tests incl. concurrency stress
 node test/sim.js --days 90        # replay synthetic days through the engine
 node test/sim.js --assert         # balance gates, across all three equip profiles
 node bin/demo.js --list           # 23 HUD scenes, for screenshots and layout work
+node bin/demo.js loose --frames   # walk one scene across every frame of its blow
 ```
 
 (Point it at the glob, not `test/` — the directory also holds `sim.js`, which is
@@ -651,6 +652,14 @@ also the only coverage of several animation branches: a legendary drop, a boss
 intro and a death are rare by design, so waiting for one is not a test strategy.
 It earns its keep — the unseparated `-21594g` in the death banner was found by
 looking at a screenshot of it.
+
+`--frames` walks a scene across every frame it has instead of drawing the one
+worth a screenshot. A blow is 1500ms and the statusline redraws about once a
+second, so in play you catch one frame of five at random — which is a bad way to
+tell a recoil that recovers from one that sticks. Each scene is walked on the
+clock its own animation runs on: a `hit` or `mhit` on the weighted frames of
+`sprites.BLOW_MS`, a banner on the two flat ticks its flash alternates over, and
+a scene with no animation drawn once.
 
 Naming a frame means naming the clock too: animations are picked by elapsed time,
 and a demo that spawns a child process is asking for a frame across a boundary the

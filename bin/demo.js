@@ -15,6 +15,7 @@
 //   node bin/demo.js boss loot          just those scenes
 //   node bin/demo.js --mode compact     the one-line-sprite layout
 //   node bin/demo.js --cols 76          at a specific width
+//   node bin/demo.js --frames           every frame of each scene, not just one
 //   node bin/demo.js --list             scene names
 
 const fs = require('fs');
@@ -30,15 +31,18 @@ const R = require('../lib/render');
 const B = require('../lib/balance');
 const sprites = require('../lib/sprites');
 
-// Rendered at this offset into the animation, so multi-frame effects are caught
-// mid-swing rather than on frame 0. Every class lands its blow on frame 3
-// (`sprites.attacks`), and the damage number, the counter-hit and the red hurt
-// flash all wait for that frame — so this is the earliest one where a hit scene
-// shows everything a hit does.
-const FRAME = 3;
+// The one frame a scene is drawn at without `--frames`: the impact. The damage
+// number, the counter-hit and the red hurt flash all wait for it, so it is the
+// earliest frame where a hit scene shows everything a hit does.
+//
+// Derived rather than written down, and derived from the *hero's* script even
+// though the monster's lands on the same index — one constant serves both only
+// because the two scripts are the same shape, and asking each for its own is
+// what keeps that an observation rather than an assumption.
+const FRAME = sprites.hitFrame('wizard');
 // Off the weighted grid, not a multiple of the flat tick: the frames of a blow
 // are no longer the same length as each other (`sprites.BLOW_MS`), so the only
-// way to name frame 3 is to ask where it starts.
+// way to name a frame is to ask where it starts.
 const AGO = sprites.beatMs(FRAME);
 
 function monster(zoneId, monsterId, level, hpFrac) {
@@ -343,16 +347,17 @@ const SCENES = {
   },
 };
 
-function render(state, { cols, mode, home }) {
+function render(state, { cols, mode, home, ago = AGO }) {
   const now = Date.now();
   state.updatedAt = state.lastEventAt = state.lastTickAt = now;
   // Re-anchor every anim to *this* render, since building the scenes takes
   // long enough that a frame can expire between build and draw. That closed the
-  // gap up to the spawn and no further — starting node costs another ~90ms of
-  // the 250ms frame, so on a busy machine a scene could still be drawn a frame
-  // past FRAME. Handing the child the same clock makes the offset exact, which
-  // matters here because the whole point of FRAME is showing a specific one.
-  for (const a of state.anim) a.at = now - AGO;
+  // gap up to the spawn and no further — starting node costs another ~90ms, and
+  // the shortest frame of a blow is 50ms, so on a busy machine a scene could
+  // still be drawn a frame past the one asked for. Handing the child the same
+  // clock makes the offset exact, which matters here because the whole point of
+  // `ago` is showing a specific frame.
+  for (const a of state.anim) a.at = now - ago;
   fs.writeFileSync(path.join(home, 'state.json'), JSON.stringify(state));
   return execFileSync('node', [LINE_JS], {
     env: {
@@ -361,6 +366,40 @@ function render(state, { cols, mode, home }) {
     },
     input: '{}', encoding: 'utf8',
   }).replace(/\n$/, '');
+}
+
+// Which frames a scene has to show, and when each of them starts. Every scene
+// gets walked on whatever clock its own animation actually runs on, because the
+// HUD has two and they are not the same grid (see the comment on `beat` in the
+// statusline):
+//
+//   * A `hit` or `mhit` is a scripted blow, so it walks `sprites.BLOW_MS` — the
+//     weighted frames, uneven on purpose, which is why the offsets are asked for
+//     rather than multiplied out.
+//   * Every other anim is a banner, and what a banner *does* over time is flash
+//     between two colours on the flat 250ms tick. Two ticks is the whole cycle;
+//     a third would repeat the first.
+//   * A scene with no anim at all (`fresh`) has nothing to walk, and says so by
+//     returning the single frame it would have drawn anyway.
+//
+// The label is the frame's own index on its own clock, so it lines up with the
+// script in `sprites.attacks` rather than with a count of renders.
+function framesOf(state) {
+  const a = state.anim && state.anim[0];
+  if (!a) return [{ label: null, ago: AGO }];
+  if (a.type === 'hit' || a.type === 'mhit') {
+    const lands = a.type === 'hit' ? sprites.hitFrame(state.hero.class) : sprites.MONSTER_HIT_FRAME;
+    return Array.from({ length: sprites.BEATS }, (_, i) => ({
+      label: `frame ${i}  ${sprites.beatMs(i)}–${sprites.beatMs(i + 1)}ms`
+        + (i === lands ? '   ← impact' : ''),
+      ago: sprites.beatMs(i),
+    }));
+  }
+  return Array.from({ length: 2 }, (_, i) => ({
+    label: `tick ${i}  ${i * sprites.FRAME_MS}–${(i + 1) * sprites.FRAME_MS}ms`
+      + (i === 0 ? '   (banners flash on the flat tick)' : ''),
+    ago: i * sprites.FRAME_MS,
+  }));
 }
 
 function main() {
@@ -379,6 +418,7 @@ function main() {
   }
   const mode = String(opt('mode', 'big'));
   const cols = parseInt(opt('cols', mode === 'compact' ? 60 : 100), 10);
+  const walk = !!opt('frames', false);
   const names = argv.filter(a => !a.startsWith('--'));
   const bad = names.filter(n => !SCENES[n]);
   if (bad.length) {
@@ -390,13 +430,23 @@ function main() {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'rpg-demo-'));
   try {
     const rule = '─'.repeat(Math.min(cols, 100));
+    let drawn = 0;
     for (const name of chosen) {
       const s = SCENES[name];
       console.log(`\n${R.c('dim', rule)}\n${R.c('bold', name)}  ${R.c('dim', '· ' + s.blurb)}\n`);
-      console.log(render(s.build(Date.now()), { cols, mode, home }));
+      // Rebuilt per frame rather than built once and re-anchored, because
+      // `render` mutates the state it is handed — the scene each frame draws has
+      // to be the same scene, not the previous frame's leftovers.
+      const frames = walk ? framesOf(s.build(Date.now())) : [{ label: null, ago: AGO }];
+      for (const f of frames) {
+        if (f.label) console.log(R.c('dim', `  ${f.label}`));
+        console.log(render(s.build(Date.now()), { cols, mode, home, ago: f.ago }));
+        drawn += 1;
+      }
     }
     console.log(`\n${R.c('dim', rule)}`);
-    console.log(R.c('dim', `  ${chosen.length} scene(s) · ${mode} HUD at ${cols} cols · --list for the rest`));
+    console.log(R.c('dim', `  ${chosen.length} scene(s)${walk ? `, ${drawn} frame(s)` : ''}`
+      + ` · ${mode} HUD at ${cols} cols · --list for the rest`));
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

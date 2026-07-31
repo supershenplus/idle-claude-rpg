@@ -110,3 +110,60 @@ test('NO_COLOR emits no escape sequences at all', () => {
   assert.strictEqual(R.visible(coloured), plain,
     'the two differ by more than colour — NO_COLOR is changing the layout');
 });
+
+// ---- --frames ----
+//
+// The flag exists because the frames worth checking are the ones nobody catches
+// in play: a 1500ms blow is sampled once or twice at the statusline's redraw
+// rate, so "run it and wait" shows you a random one of five. Walking a scene is
+// also the only way to see a *sequence* — that the recoil recovers, that the
+// mark crosses — rather than a still.
+test('--frames walks a blow across its whole script', () => {
+  const sprites = require('../lib/sprites');
+  const out = demo(['loose', '--frames', '--cols', '100']);
+  const labels = out.split('\n').map(l => require('../lib/render').visible(l).trim())
+    .filter(l => /^frame \d/.test(l));
+  assert.strictEqual(labels.length, sprites.BEATS,
+    `walked ${labels.length} frames of a ${sprites.BEATS}-frame script`);
+  // Every frame is named on its own clock, and the impact is called out, so the
+  // output can be read against `sprites.attacks` rather than counted by eye.
+  labels.forEach((l, i) => assert.ok(l.startsWith(`frame ${i} `), `frame ${i} is labelled ${l}`));
+  assert.strictEqual(labels.filter(l => l.includes('impact')).length, 1,
+    'the impact frame is not called out exactly once');
+  assert.ok(labels[sprites.hitFrame('ranger')].includes('impact'),
+    'the impact is marked on a frame the script does not land on');
+});
+
+test('the frames a walk prints are actually different pictures', () => {
+  // The failure this catches is the flag being a no-op: five renders of one
+  // frame look plausible until you notice the arrow never moves. Scenes are
+  // rebuilt per frame, so a state mutated by the previous render would show up
+  // here too.
+  const R = require('../lib/render');
+  const scenes = demo(['loose', '--frames', '--cols', '100'])
+    .split('\n').filter(l => l.startsWith('⠀')).map(R.visible);
+  assert.ok(scenes.length >= 10, `only ${scenes.length} HUD rows across the walk`);
+  // The waist row is where both the hero's grip and the mark in the gap live.
+  const waists = scenes.filter(l => l.includes('▚░▒██▓▬') || l.includes('▚░▒██▓▬┼──▶'));
+  assert.ok(new Set(waists).size >= 4,
+    `the walk drew ${new Set(waists).size} distinct waist rows — the frames are not moving`);
+});
+
+test('a banner scene walks its flash instead of a script it does not have', () => {
+  // Banners have no attack script; what they do over time is alternate two
+  // colours on the flat tick. Walking them on the blow grid would print five
+  // identical marquees, so the walk asks each scene which clock it runs on.
+  const out = demo(['boss', '--frames', '--cols', '100']);
+  const R = require('../lib/render');
+  const ticks = out.split('\n').map(l => R.visible(l).trim()).filter(l => /^tick \d/.test(l));
+  assert.strictEqual(ticks.length, 2, `walked ${ticks.length} ticks of a two-tick flash`);
+  const banners = out.split('\n').filter(l => l.includes('BOSS: AURELIA'));
+  assert.strictEqual(banners.length, 2, 'the banner is not drawn once per tick');
+  assert.notStrictEqual(banners[0], banners[1], 'both ticks drew the same colour — the flash is dead');
+});
+
+test('a scene with no animation still renders once under --frames', () => {
+  const out = demo(['fresh', '--frames', '--cols', '100']);
+  assert.match(out, /Whispering Grove/, 'an unanimated scene vanished under the walk');
+  assert.doesNotMatch(out, /frame \d/, 'a scene with no anim was given frames to walk');
+});
