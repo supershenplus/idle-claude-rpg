@@ -267,6 +267,27 @@ const SCENES = {
       return st;
     },
   },
+  // The same banner with a blow underneath it, which is the pair worth reading
+  // side by side: the HUD has two surfaces and they are driven by two anims.
+  // Before the lanes, this scene could not happen — a hit that arrived during a
+  // level-up was scheduled *after* it, so the frame you actually got was the one
+  // above, and the swing turned up five seconds later against a monster that was
+  // not the one that earned it.
+  overlay: {
+    blurb: 'a blow landing while the level-up banner is still up — both lanes at once',
+    build: now => {
+      const st = hero(now, { cls: 'ranger', name: 'Nullpointer', level: 24, zone: 'archives', gold: 6210, hpFrac: 0.88, xpFrac: 0.04 });
+      st.monster = monster('archives', 'librarian', 23, 0.41);
+      // Deliberately not the same `at`: the banner is a second into its five and
+      // the blow is fresh, which is what the queue does when work keeps arriving.
+      st.anim = [
+        { type: 'levelup', at: now - 1000, dur: 5000, data: { level: 24 } },
+        anim('hit', 1500, { dmg: 73, crit: false, counter: 12 }, now),
+      ];
+      st.ticker = [R.c('green', 'tests pass +240xp'), R.c('dim', 'Librarian — 73')];
+      return st;
+    },
+  },
   loot: {
     blurb: 'a legendary drop',
     build: now => {
@@ -347,6 +368,14 @@ const SCENES = {
   },
 };
 
+// The anim a scene is *about*, and so the one `ago` names a frame of. A scene
+// can now carry one from each lane (`overlay`), and the blow is the half with
+// frames worth naming — a banner does the same thing for its whole duration.
+function refAnim(state) {
+  const q = state.anim || [];
+  return q.find(a => E.laneOf(a.type) === 'blow') || q[0] || null;
+}
+
 function render(state, { cols, mode, home, ago = AGO }) {
   const now = Date.now();
   state.updatedAt = state.lastEventAt = state.lastTickAt = now;
@@ -357,7 +386,16 @@ function render(state, { cols, mode, home, ago = AGO }) {
   // still be drawn a frame past the one asked for. Handing the child the same
   // clock makes the offset exact, which matters here because the whole point of
   // `ago` is showing a specific frame.
-  for (const a of state.anim) a.at = now - ago;
+  //
+  // Shifted by a common delta rather than each set to the same instant: a
+  // two-lane scene means something by how far apart its anims are — a banner a
+  // second into its five with a blow that has just started is the case the lanes
+  // exist for — and stacking them on one timestamp would draw a different scene.
+  const ref = refAnim(state);
+  if (ref) {
+    const delta = (now - ago) - ref.at;
+    for (const a of state.anim) a.at += delta;
+  }
   fs.writeFileSync(path.join(home, 'state.json'), JSON.stringify(state));
   return execFileSync('node', [LINE_JS], {
     env: {
@@ -385,7 +423,7 @@ function render(state, { cols, mode, home, ago = AGO }) {
 // The label is the frame's own index on its own clock, so it lines up with the
 // script in `sprites.attacks` rather than with a count of renders.
 function framesOf(state) {
-  const a = state.anim && state.anim[0];
+  const a = refAnim(state);
   if (!a) return [{ label: null, ago: AGO }];
   if (a.type === 'hit' || a.type === 'mhit') {
     const lands = a.type === 'hit' ? sprites.hitFrame(state.hero.class) : sprites.MONSTER_HIT_FRAME;

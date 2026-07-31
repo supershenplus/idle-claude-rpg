@@ -19,6 +19,54 @@ is in `docs/PLAN.md`.
 
 ## Current status (latest first)
 
+### The blow and the banner stop competing for the screen (2026-07-31)
+
+- **The other half of what the redraw measurement showed, and the half that was
+  left undone on purpose.** `enqueue` computed `at = max(now, last.at +
+  last.dur)` against the last anim *of any kind*, so a blow that arrived during a
+  `kill` (2500ms) plus the `levelup` behind it was scheduled after both. Measured
+  in one 19-second window: a hit sat queued **6.5 seconds**, and while it waited
+  every further hit coalesced into it. What the player saw was a stretch where the
+  hero visibly never swung, then one swing out of nowhere long after the work that
+  earned it — the other half of "attack animations don't always render"
+- **Of the three options `todo.md` left open — drop, overlay, leave — overlay is
+  the one that turned out to be a queue change rather than a renderer change.**
+  The premise of the whole problem is that a blow and a banner compete for the
+  screen, and they don't: a blow is what the *sprites* are doing, a banner is what
+  the *info row* says, and the HUD has always drawn both rows every frame. So they
+  get a lane each (`engine.laneOf`). Within a lane the old serialisation is
+  untouched — two blows still queue, because they are the same pair of sprites —
+  and across lanes nothing waits for anything. The renderer picks at most one of
+  each and draws them together
+- **The lanes touch in exactly one place, and it has to be one set or neither rule
+  is right.** Six banners put something on the sprites as well as the row — a
+  corpse (`kill`, `bossdown`, `cleared`), a hero who just died (`death`), a field
+  the monster left (`travel`, `goblinflee`) — and a blow drawn across one is a
+  hero swinging at a body. Those hide a blow *and* wait for one:
+  `SCENE_BANNERS` scheduled flat would start the `kill` on the same millisecond
+  as the hit that earned it, and the renderer would then hide the game's most
+  satisfying frame every single time. Suppressing costs only the tell, since the
+  damage was banked in state when the event was folded
+- **The cap moved with the clock, for the same reason.** `ANIM_CAP` counted over
+  the whole queue, which is a way for a run of banners to keep blows off the
+  screen — the original bug arriving by a different route. It is counted per lane
+  now; the queue can hold twice as many entries and each is four fields
+- **The change surfaced a latent bug that predates it and that it would have made
+  routine.** Three things decorate a hit after the fact — the counter's `↩-N`, the
+  near-miss tell, and the corpse the killing blow is drawn against — and all three
+  read `state.anim[state.anim.length - 1]`. That was "the hit" only while one
+  timeline meant a hit was always the last thing *pushed*. With lanes, a hit can
+  coalesce into one already in the queue while a banner sits after it in the
+  array, and all three decorations then land on nothing — silently, because
+  `hurtHero` has already taken the HP off. Two kills inside one fold is enough to
+  reach it, which was true before the lanes too. `liveHit(state, now)` replaces
+  all three lookups; both regression tests fail against the old expression
+- **`bin/demo.js overlay` is the scene that could not exist before**: a hit at
+  full extension, arrow crossing, `✦-73` and `↩-12` in the gap and the monster lit
+  yellow, under a LEVEL UP banner that is a second into its five. `--frames` walks
+  it on the blow's clock and shifts both anims by a common delta, because the
+  distance between them is the thing the scene is about
+
 ### The blow spends its time where it can be seen (2026-07-31)
 
 - **Started as "attack animations don't always render, sometimes not at all",

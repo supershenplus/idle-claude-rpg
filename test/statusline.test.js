@@ -234,6 +234,38 @@ test('an untagged animation still renders the live monster', () => {
   assert.ok(out.includes('(s)'), 'the fight carries on underneath the banner');
 });
 
+// The two lanes, on screen together. A blow and a banner are different surfaces
+// — the sprites and the info row — so a hit that lands during a level-up plays
+// on the frame it was earned on instead of waiting five seconds for the banner
+// to clear and then swinging at nothing.
+test('a blow plays underneath a banner that is only a line of text', () => {
+  const out = renderAnim(100, (st, now) => {
+    st.monster = { id: 'sprite', name: 'Grove Sprite', sprite: '(s)', level: 3, isBoss: false, hp: 40, maxHp: 40 };
+    st.anim = [
+      { type: 'levelup', at: now - 500, dur: 5000, data: { level: 9 } },
+      { type: 'hit', at: now - sprites.beatMs(sprites.hitFrame('ranger')), dur: 1500, data: { dmg: 51, crit: false } },
+    ];
+  });
+  assert.match(out, /LEVEL UP/, 'the banner lost its row to the blow');
+  assert.match(out, /✦-51/, 'the blow did not draw while the banner held the row');
+});
+
+// And the exception that makes the rule worth stating: the banners that put
+// something on the sprites themselves. A hero swinging at the corpse it just
+// made is worse than a swing nobody saw, so those hide the blow — which is only
+// coherent because the same set makes them *wait* for it (see engine.enqueue).
+test('a banner that owns the sprites hides a blow rather than sharing with it', () => {
+  const out = renderAnim(100, (st, now) => {
+    st.monster = { id: 'sprite', name: 'Grove Sprite', sprite: '(s)', level: 3, isBoss: false, hp: 40, maxHp: 40 };
+    st.anim = [
+      { type: 'kill', at: now - 500, dur: 2500, data: { name: 'Grove Sprite', xp: 10, gold: 4, mon: CORPSE } },
+      { type: 'hit', at: now - sprites.beatMs(sprites.hitFrame('ranger')), dur: 1500, data: { dmg: 51, crit: false } },
+    ];
+  });
+  assert.match(out, /slain/, 'the kill banner is on screen');
+  assert.doesNotMatch(out, /✦-51/, 'a blow was drawn across the corpse');
+});
+
 // The gap between the combatants is the only part of the scene drawn from raw
 // combat numbers, and those numbers have no ceiling: `engine.enqueue` sums
 // rapid hits into one anim and counters sum onto the same record, so a catch-up

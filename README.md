@@ -47,6 +47,23 @@ the ranger looses and recoils. Whatever leaves the sprite is what crosses the
 gap. Take a counter-swing and the hero washes red; slip one and it ghosts and
 leans out of the blow, head furthest, feet planted.
 
+**The blows and the banners are separate lanes**, because they are separate
+surfaces: a blow is what the sprites do and a banner is what the info row says.
+They used to share one timeline, so a hit that arrived during a kill and the
+level-up behind it was scheduled after both — measured in play, one sat queued
+6.5 seconds, and every further hit coalesced into it while it waited. What you
+saw was a stretch where the hero never swung, then a single swing long after the
+work that earned it. Now a blow plays on the frame it was earned on and the
+banner holds the row underneath it, both at once.
+
+The exception is the handful of banners that put something on the *sprites* too
+— a corpse, a field the monster fled, a hero who just died. Those hide a blow
+rather than sharing with it, since a hero swinging at a body is worse than a
+swing nobody saw; and for the same reason they wait for the blow lane before they
+start, so the killing blow is still drawn before the corpse it made. One set in
+`engine.js` decides both, because either rule alone is wrong: a `kill` that hid
+the killing blow without waiting for it would hide it every time.
+
 **Big blows throw a volley.** A commit, or a push against a boss, sends three
 marks across the gap instead of one — `★━━★━━★` for the wizard, `➳--➳--➳` for the
 ranger — strung on the class's own trail, so it reads as one weapon fired three
@@ -659,7 +676,10 @@ second, so in play you catch one frame of five at random — which is a bad way 
 tell a recoil that recovers from one that sticks. Each scene is walked on the
 clock its own animation runs on: a `hit` or `mhit` on the weighted frames of
 `sprites.BLOW_MS`, a banner on the two flat ticks its flash alternates over, and
-a scene with no animation drawn once.
+a scene with no animation drawn once. A scene can carry one anim from each lane
+(`overlay`), and then the blow is the half with frames worth naming — the walk
+shifts both by a common delta so the distance between them, which is the thing
+that scene is about, survives being re-anchored.
 
 Naming a frame means naming the clock too: animations are picked by elapsed time,
 and a demo that spawns a child process is asking for a frame across a boundary the

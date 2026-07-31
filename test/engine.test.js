@@ -225,6 +225,55 @@ test('a burst that coalesces reports the blood, not the dodge', () => {
   assert.strictEqual(s.anim.at(-1).data.dodged, false, 'a later dodge overwrote the blow');
 });
 
+// Everything that decorates a hit after the fact — the counter, the near miss,
+// the corpse the killing blow is drawn against — used to reach for the last
+// entry in the anim queue, which was the same thing as "the hit" only while one
+// timeline meant a hit was always the last thing pushed. With a lane each, a
+// banner can be pushed after a hit that is still live and still being coalesced
+// into, and reading the end of the array silently dropped the decoration.
+test('a hit is still found once a banner has been queued on top of it', () => {
+  const s = fresh();
+  Object.assign(s.monster, { maxHp: 1e6, hp: 1e6 });
+  s.hero.maxHp = s.hero.hp = 1e6;
+  E.dealDamage(s, 1, {}, () => 1, T0 + 1000);              // a hit, unanswered
+  E.enqueue(s, 'levelup', 5000, { level: 2 }, T0 + 1000);  // now the array's end
+  assert.strictEqual(s.anim.at(-1).type, 'levelup', 'the fixture proves nothing');
+
+  E.retaliate(s, () => 0, T0 + 1100);
+  assert.ok(s.anim.find(a => a.type === 'hit').data.counter > 0,
+    'the ↩-N went on the floor while the HP came off the hero');
+
+  const s2 = fresh();
+  Object.assign(s2.monster, { maxHp: 1e6, hp: 1e6 });
+  E.dealDamage(s2, 1, {}, () => 1, T0 + 1000);
+  E.enqueue(s2, 'levelup', 5000, { level: 2 }, T0 + 1000);
+  E.retaliate(s2, () => B.RETALIATE_CHANCE + B.NEAR_MISS_BAND / 2, T0 + 1100);
+  assert.strictEqual(s2.anim.find(a => a.type === 'hit').data.dodged, true,
+    'the near miss was narrated at nothing');
+});
+
+test('the killing blow is tagged even when it coalesced behind a banner', () => {
+  // Two kills inside one fold: the second hit coalesces into the first, which by
+  // then has a `kill` banner sitting after it in the array. Tagged off the end of
+  // the array, the second corpse never reaches the blow — and the HUD draws the
+  // killing swing against the monster that had already replaced its target,
+  // which is the exact scene the corpse copy exists to prevent.
+  // Named by hand because the spawner can legitimately roll the same monster
+  // twice, and then "which corpse is on the blow" has no observable answer.
+  const s = fresh('knight');
+  Object.assign(s.monster, { name: 'First', hp: 1 });
+  E.fold(s, [ev('commit', T0 + 1000)], T0 + 1000);
+  Object.assign(s.monster, { name: 'Second', hp: 1 });
+  E.fold(s, [ev('commit', T0 + 1100)], T0 + 1100);
+
+  assert.strictEqual(s.counters.kills, 2, 'the fixture did not kill twice');
+  const hits = s.anim.filter(a => a.type === 'hit');
+  assert.strictEqual(hits.length, 1, 'the second blow did not coalesce');
+  assert.ok(hits[0].data.mon, 'the killing blow carries no corpse at all');
+  assert.strictEqual(hits[0].data.mon.name, 'Second',
+    'the blow kept the first kill, so the second corpse was dropped');
+});
+
 test('reading the roll three ways still spends exactly one of them', () => {
   // The whole claim that this changes no balance rests on the RNG stream being
   // untouched: every tuned number and every seeded test downstream of a
@@ -453,15 +502,72 @@ test('rest (Stop) heals 25% of missing hp', () => {
   assert.ok(s.hero.hp >= s.hero.maxHp - 40 + 10 - 1);
 });
 
-test('anim queue: caps, coalescing, serialized starts', () => {
+// Serialisation used to be a property of the whole queue. It is now a property
+// of each lane, which is the point of having two: a blow is what the sprites are
+// doing and a banner is what the info row says, and those two surfaces are drawn
+// at the same time, so making one wait for the other only ever hid it.
+test('anim queue: caps, coalescing, serialized starts within a lane', () => {
   const s = fresh();
   const events = [];
   for (let i = 0; i < 50; i++) events.push(ev('attack_jab', T0 + 1000 + i));
   E.fold(s, events, T0 + 2000);
-  assert.ok(s.anim.length <= B.ANIM_CAP);
-  for (let i = 1; i < s.anim.length; i++) {
-    assert.ok(s.anim[i].at >= s.anim[i - 1].at + s.anim[i - 1].dur, 'no overlap');
+  for (const lane of ['blow', 'banner']) {
+    const q = s.anim.filter(a => E.laneOf(a.type) === lane);
+    assert.ok(q.length <= B.ANIM_CAP, `${lane} lane over cap at ${q.length}`);
+    for (let i = 1; i < q.length; i++) {
+      assert.ok(q[i].at >= q[i - 1].at + q[i - 1].dur, `${lane} lane overlaps itself`);
+    }
   }
+});
+
+// The bug the lanes exist for, measured in play before they did: `at` was taken
+// off the last anim of any kind, so a hit that arrived during a kill (2500ms)
+// and the level-up behind it (5000ms) was scheduled after both — six and a half
+// seconds of a hero standing still, then one swing out of nowhere.
+test('a blow does not queue behind a banner it has nothing to do with', () => {
+  const s = fresh();
+  E.enqueue(s, 'levelup', 5000, { level: 2 }, T0);
+  E.enqueue(s, 'loot', 2500, { name: 'x', rarity: 'rare' }, T0);
+  E.enqueue(s, 'hit', 1500, { dmg: 10 }, T0 + 100);
+
+  const hit = s.anim.find(a => a.type === 'hit');
+  assert.strictEqual(hit.at, T0 + 100, 'the blow was scheduled after the banners');
+  // And the banners are still in order behind each other.
+  assert.strictEqual(s.anim.find(a => a.type === 'loot').at, T0 + 5000);
+});
+
+// The other direction, and the reason the two rules are one set: a banner that
+// takes the sprites over is *about* the blow in front of it. Scheduled flat it
+// would start on the same millisecond as the hit that earned it, and the
+// renderer — which hides a blow under exactly these banners — would then never
+// draw the killing blow at all.
+test('a banner that owns the sprites waits for the blow it is about', () => {
+  const s = fresh();
+  E.enqueue(s, 'hit', 1500, { dmg: 10 }, T0);
+  E.enqueue(s, 'kill', 2500, { name: 'x', xp: 1, gold: 1 }, T0);
+  assert.strictEqual(s.anim.find(a => a.type === 'kill').at, T0 + 1500);
+
+  // A banner that does not own them keeps its own lane's clock and starts now.
+  const s2 = fresh();
+  E.enqueue(s2, 'hit', 1500, { dmg: 10 }, T0);
+  E.enqueue(s2, 'levelup', 5000, { level: 2 }, T0);
+  assert.strictEqual(s2.anim.find(a => a.type === 'levelup').at, T0);
+});
+
+// The cap is counted per lane for the same reason the clock is. Shared, a run of
+// banners is a way to keep blows off the screen — which is the thing the lanes
+// were split to stop, arriving by a different route.
+test('a saturated banner lane cannot keep a blow out of the queue', () => {
+  const s = fresh();
+  s.anim = [];
+  for (let i = 0; i < B.ANIM_CAP + 5; i++) {
+    E.enqueue(s, 'loot', 2500, { name: 'x' + i, rarity: 'common' }, T0);
+  }
+  assert.strictEqual(s.anim.length, B.ANIM_CAP, 'the banner lane did not cap');
+  E.enqueue(s, 'hit', 1500, { dmg: 10 }, T0);
+  const hit = s.anim.find(a => a.type === 'hit');
+  assert.ok(hit, 'a full banner lane swallowed the blow');
+  assert.strictEqual(hit.at, T0, 'and made it wait');
 });
 
 test('inventory cap auto-sells the worst item', () => {

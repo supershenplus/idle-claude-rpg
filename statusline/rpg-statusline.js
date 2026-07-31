@@ -45,6 +45,12 @@ function main(stdin) {
   const C = require('../lib/content');
   const sprites = require('../lib/sprites');
   const B = require('../lib/balance');
+  // Eager, unlike `state.tryFold`'s deliberately lazy one: the lanes and which
+  // banners own the sprites are decided in the engine, and the renderer reads
+  // that rather than keeping a second copy in step by hand. It costs nothing on
+  // the common path — a fold that did any work has already loaded it — and 0.75ms
+  // against a ~90ms process start on the paths that hadn't (no save, lock busy).
+  const E = require('../lib/engine');
 
   // stdin was previously ignored entirely. It carries the working directory,
   // which is what makes this the poller for pushes made outside Claude's tools
@@ -96,8 +102,36 @@ function main(stdin) {
     + R.c(hpCol, `♥ ${h.hp}/${h.maxHp}`) + `   ${R.c('yellow', '⛁ ' + R.fmtGold(h.gold))}${badge}`;
 
   // ---- active animation ----
-  const anim = (state.anim || []).find(a => now >= a.at && now < a.at + a.dur);
-  const elapsed = anim ? now - anim.at : 0;
+  //
+  // Two of them, at most one from each of `engine.laneOf`'s lanes, because the
+  // scene has two surfaces: the sprites, which a *blow* drives, and the info row,
+  // which a *banner* holds. Those used to be one queue, so a hit that arrived
+  // during a level-up did not play — it waited five seconds and then swung at
+  // nothing in particular. Drawing one of each is what lets the blow land on the
+  // frame it was earned on while the banner still says LEVEL UP.
+  const active = (state.anim || []).filter(a => now >= a.at && now < a.at + a.dur);
+  const banner = active.find(a => E.laneOf(a.type) === 'banner') || null;
+  let blow = active.find(a => E.laneOf(a.type) === 'blow') || null;
+
+  // Except where the banner has taken the sprites over. Those are the banners
+  // whose subject is not the fight in front of you — a corpse, a field a monster
+  // fled or was travelled away from, a hero who died — and a blow drawn across
+  // one is a hero swinging at a body. The rest (a level-up, a drop, the away
+  // summary, a boss announcing itself) leave both combatants exactly where the
+  // blow expects them, so the blow plays.
+  //
+  // Which banners those are is the engine's list, not a second one kept in step
+  // by hand: the same set decides that a scene banner waits for the blow lane
+  // before it starts, and the two rules are only coherent together. A `kill`
+  // that hid the killing blow but did not wait for it would hide it *always*.
+  //
+  // Suppressing rather than dropping: the damage was banked in state when the
+  // event was folded, so what is lost here is the tell and nothing else — and
+  // the blow expires on its own clock instead of queueing behind the banner,
+  // which is the whole point.
+  if (banner && E.SCENE_BANNERS.has(banner.type)) blow = null;
+
+  const elapsed = blow ? now - blow.at : 0;
   // Two clocks, because the scene has two kinds of moving part and they want
   // different grids. `frame` is the flat 250ms tick, and it drives everything
   // that blinks: the banners, the red wash on a hurt sprite. A blink is a rate
@@ -105,11 +139,15 @@ function main(stdin) {
   // frames of a blow — and every anim type has one, including the ten-second
   // banners that have no script at all.
   //
+  // One per lane now, since the two can be on screen together and each blinks
+  // against its own start: `bFrame` for the banner, `frame` for the sprites.
+  //
   // `beat` is which frame of a *blow* is on screen, off the weighted grid in
   // `sprites.BLOW_MS`. Only `hit` and `mhit` have one. See the comment on
   // BLOW_MS for why the two came apart: a flat grid spent a third of every blow
   // on the at-rest frames, which at one redraw a second is a third of all the
   // hits you ever see rendering as no animation at all.
+  const bFrame = banner ? Math.floor((now - banner.at) / sprites.FRAME_MS) : 0;
   const frame = Math.floor(elapsed / sprites.FRAME_MS);
   const beat = sprites.beatAt(elapsed);
 
@@ -117,10 +155,15 @@ function main(stdin) {
   // play afterwards, so they carry their own copy of the monster they concern
   // (`engine.resolveKill`). Rendering that copy is what keeps the scene in order
   // — otherwise the killing blow lands on the monster that replaced the target.
-  const mon = (anim && anim.data && anim.data.mon) || m;
+  //
+  // The blow is asked first because it is the earlier of the two: the killing
+  // hit is tagged as well as the `kill` banner that follows it, and while that
+  // hit is on screen the corpse it is about has not been announced yet.
+  const mon = (blow && blow.data && blow.data.mon)
+    || (banner && banner.data && banner.data.mon) || m;
   // The corpse stays on the field for the celebration too: flipping back to a
   // live sprite under a "DEFEATED" banner reads as the wrong monster dying.
-  const dead = !!anim && (anim.type === 'kill' || anim.type === 'bossdown' || anim.type === 'cleared');
+  const dead = !!banner && (banner.type === 'kill' || banner.type === 'bossdown' || banner.type === 'cleared');
 
   const tickerLine = () => {
     const parts = [R.c('dim', zone.name)];
@@ -132,8 +175,9 @@ function main(stdin) {
   // A banner replaces the monster's info row for its duration rather than
   // blanking the scene, so the sprites never disappear mid-fight.
   function bannerText() {
-    if (!anim) return null;
-    const flash2 = (a, b) => (frame % 2 === 0 ? a : b);
+    if (!banner) return null;
+    const anim = banner;
+    const flash2 = (a, b) => (bFrame % 2 === 0 ? a : b);
     switch (anim.type) {
       case 'levelup':
         return R.c(flash2('brightYellow', 'yellow'), `★★★ LEVEL UP — ${anim.data.level} ★★★`);
@@ -201,12 +245,12 @@ function main(stdin) {
   // A class may script its attack (see sprites.attacks): a pose to hold, a
   // recoil, and where its projectile has got to this frame. Classes without one
   // get `null` here and keep the generic mark that grows out of the gap.
-  const atk = anim && anim.type === 'hit' ? sprites.attackFrame(h.class, beat) : null;
+  const atk = blow && blow.type === 'hit' ? sprites.attackFrame(h.class, beat) : null;
   // The monster's own blow (`sprites.monsterAttack`), which has no class and no
   // pose art — one displacement per frame, applied to whichever of the 28
   // sprites happens to be standing there. It drives the hero back too, so the
   // recoil field is shared: on any given frame at most one of the two is live.
-  const mAtk = anim && anim.type === 'mhit' ? sprites.monsterAttackFrame(beat, mon.id) : null;
+  const mAtk = blow && blow.type === 'mhit' ? sprites.monsterAttackFrame(beat, mon.id) : null;
   const recoil = atk ? atk.back : (mAtk ? mAtk.hero : 0);
 
   // Bosses swing deeper than the shared script (sprites.BOSS_SWING), and the
@@ -222,7 +266,7 @@ function main(stdin) {
   // step with a class that lands on a different one, and confined to `hit`
   // anims — the corpse the kill swaps in must not be seen flinching.
   const hitLandsOn = sprites.hitFrame(h.class);
-  const struck = anim && anim.type === 'hit' && beat >= hitLandsOn
+  const struck = blow && blow.type === 'hit' && beat >= hitLandsOn
     ? sprites.monsterFlinchFrame(beat - hitLandsOn)
     : null;
   // Positive is toward the hero. A flinch belongs to the hero's hit anim and a
@@ -251,25 +295,29 @@ function main(stdin) {
   // for the whole of a death. Alternating two reds rather than holding one:
   // the HUD is redrawn about once a second, so a viewer sees isolated frames,
   // and a flat wash would be indistinguishable from a hero who simply is red.
-  const landedOn = anim && anim.type === 'hit' && beat >= hitLandsOn;
+  const landedOn = !!blow && blow.type === 'hit' && beat >= hitLandsOn;
   // The unprovoked blow reddens the hero on exactly the same terms: from the
   // frame it lands, which is also the frame its figure appears in the gap.
-  const struckHero = !!anim && anim.type === 'mhit' && beat >= sprites.MONSTER_HIT_FRAME;
-  const hurt = !!anim
-    && (anim.type === 'death' || (landedOn && anim.data.counter > 0) || struckHero);
+  const struckHero = !!blow && blow.type === 'mhit' && beat >= sprites.MONSTER_HIT_FRAME;
+  // The one wash that comes off a banner rather than a blow, which is also why
+  // it needs its own clock below: a death owns the sprites (it is in
+  // SCENE_BANNERS), so there is no blow underneath it to blink against.
+  const dying = !!banner && banner.type === 'death';
+  const hurt = dying || (landedOn && blow.data.counter > 0) || struckHero;
+  const hurtFrame = dying ? bFrame : frame;
 
   // The other half of the same roll: the monster swung and missed. The engine
   // only ever tags this when nothing landed on that record (`engine.retaliate`),
   // so the two are mutually exclusive by construction — the ordering below just
   // makes that impossible to get wrong from here.
-  const dodged = !!landedOn && !!anim.data.dodged;
+  const dodged = !!landedOn && !!blow.data.dodged;
 
   // Colour is the channel for what happened *to* the hero: red for a blow taken,
   // dimmed to an afterimage for one slipped. The sprite carries the motion (the
   // lean, below) and the gap carries the verdict, so neither has to do both.
   const tint = s => {
     if (!s) return s;
-    if (hurt) return R.c(frame % 2 === 0 ? 'brightRed' : 'red', s);
+    if (hurt) return R.c(hurtFrame % 2 === 0 ? 'brightRed' : 'red', s);
     if (dodged) return R.c('dim', s);
     return s;
   };
@@ -319,15 +367,15 @@ function main(stdin) {
       flight = R.fit(sprites.MONSTER_PROJ + sprites.MONSTER_TRAIL.repeat(tail), cells - head);
     }
     const dmg = beat >= sprites.MONSTER_HIT_FRAME
-      ? R.c('brightRed', R.fit(`♥-${num(anim.data.dmg, cells - 2)}`, cells))
+      ? R.c('brightRed', R.fit(`♥-${num(blow.data.dmg, cells - 2)}`, cells))
       : '';
     return { flight, flightCol, dmg, counter: '' };
   }
 
   function gapMarks(cells) {
-    if (anim && anim.type === 'mhit') return monsterMarks(cells);
-    if (!anim || anim.type !== 'hit') return { flight: '', flightCol: 0, dmg: '', counter: '' };
-    const d = anim.data;
+    if (blow && blow.type === 'mhit') return monsterMarks(cells);
+    if (!blow || blow.type !== 'hit') return { flight: '', flightCol: 0, dmg: '', counter: '' };
+    const d = blow.data;
     let flightCol = 0;
     let flight = '';
     if (!atk) {

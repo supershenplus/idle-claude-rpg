@@ -129,32 +129,19 @@ answerable.
 
 ## Found by the redraw measurement — 2026-07-31
 
-The frame-weighting fix landed (`BUILD-LOG.md`); this is the other half of what
-the same logs showed, left undone on purpose.
+The queue half landed the same day (lanes — see `BUILD-LOG.md`). What is left is
+the method, which is worth keeping because it is cheap and nothing else in this
+repo measures the HUD rather than reasoning about it.
 
-- [ ] **A hit queues behind whatever banner is playing, and can be minutes of
-      game-time late by the time it draws.** `enqueue` serialises: `at = max(now,
-      last.at + last.dur)`. So a blow that arrives during a `kill` (2500ms) plus a
-      `levelup` (5000ms) is scheduled after both. Measured in one 19-second window:
-      a hit sat queued 6.5 seconds, and while it waited every further hit coalesced
-      into it. What the player sees is a stretch where the hero visibly never
-      swings, then one swing out of nowhere long after the work that earned it —
-      which is the *other* half of "attack animations don't always render"
-- [ ] The banners themselves are not the problem: during a level-up you want the
-      level-up. The problem is that the hit is neither dropped nor merged into what
-      is on screen, so it survives as a stale swing. Three honest options, none
-      obviously right: **drop** a `hit` whose start would be more than ~2s out (the
-      damage is already banked in state — anims are cosmetic — so this costs only
-      the tell, and the ticker still reports it); **overlay**, letting a hit play on
-      the sprites while a banner holds the text line, which is a renderer change
-      rather than a queue change and is where the real fidelity is; or **leave it**,
-      on the grounds that a delayed swing is better than no swing. Worth deciding
-      with the sprites in front of you rather than from the queue code
-- [ ] Note for whoever picks this up: the measurement method is cheap and worth
-      repeating rather than trusting the numbers above. Append `Date.now()` and the
-      anim queue to a scratch file at the top of `main()` in the statusline, drive a
-      few tool calls, read the gaps. Both redraw rates in the build log came from
-      about four minutes of that
+- [ ] **Re-measure rather than trusting the numbers the lanes were built on.**
+      Append `Date.now()` and the anim queue to a scratch file at the top of
+      `main()` in the statusline, drive a few tool calls, read the gaps. Both
+      redraw rates in the build log and the 6.5-second queue delay came from about
+      four minutes of that. The specific thing to look for now is the case the
+      lanes deliberately do *not* fix: a blow suppressed under a scene banner is
+      still a blow nobody saw, and how often that happens is a question about how
+      often you kill something and hit the next thing inside 2.5 seconds — which
+      is a play observation, not a queue one
 
 ---
 
